@@ -14,7 +14,7 @@ Update this table in the same commit that completes a phase. It is the project's
 | :---: | :--- | :--- | :--- |
 | 0 | Frontend scaffold | — | ✅ **Done** |
 | 1 | Worker, router, app shell | Workers | ✅ **Done** |
-| 2 | Database, auth, tasks CRUD | D1 | ⬜ Not started |
+| 2 | Database, auth, tasks CRUD | D1 | ✅ **Done** (backend verified end-to-end; manual browser pass of M2 still outstanding) |
 | 3 | File attachments | R2 | ⬜ Not started |
 | 4 | Caching & edge config | KV | ⬜ Not started |
 | 5 | Realtime collaboration | Durable Objects | ⬜ Not started |
@@ -89,26 +89,35 @@ The largest phase. Consider splitting the commit into 2a (schema + auth) and 2b 
 - `worker/db/seed.sql`
 - `worker/lib/password.ts` — PBKDF2 via `crypto.subtle`
 - `worker/lib/jwt.ts` — HS256 sign/verify, hand-rolled
-- `worker/lib/authz.ts` — `assertMembership`
+- `worker/lib/authz.ts` — `assertMembership`, plus `assertTaskMembership` for task/comment-scoped routes (see [security.md §6](./security.md#6-authorization))
+- `worker/lib/position.ts` — `nextPosition`/`midpoint` fractional-indexing helpers (mirrored client-side in `src/lib/position.ts` so drag-and-drop can compute a position without a round trip; the two files are small, deliberate duplicates — `src/` and `worker/` are separate compilation targets)
 - `worker/middleware/auth.ts`
-- `worker/routes/auth.ts`, `projects.ts`, `tasks.ts`
-- `src/hooks/useAuth.ts`, `useProjects.ts`
+- `worker/routes/auth.ts`, `projects.ts`, `tasks.ts` — `projects.ts` also exposes `GET /:id/members` (not in the original route table; needed so the UI can resolve assignee ids to names/avatars) and `GET /:id` gained a `memberCount` field
+- `src/hooks/useAuth.ts`, `useProjects.ts`, `useTasks.ts`, `useComments.ts`, `useMembers.ts`
 - `src/components/auth/LoginForm.tsx`, `RegisterForm.tsx`
 - `src/components/kanban/Board.tsx`, `TaskCard.tsx`, `TaskModal.tsx`
-- shadcn: Dialog, Input, Label, Card, Avatar, Badge, DropdownMenu, Toast, Skeleton
+- `src/components/layout/Sidebar.tsx`; `Navbar.tsx` extended with the project switcher, Board/Activity tabs (Activity disabled — no route until Phase 6), and the account menu, per [DESIGN.md §3](../DESIGN.md#3-app-shell)
+- Drag-and-drop via `@dnd-kit/core` + `@dnd-kit/sortable` (chosen over hand-rolled native HTML5 DnD for built-in keyboard support and touch handling)
+- shadcn: Dialog, Input, Label, Card, Avatar, Badge, DropdownMenu, Tabs, Sheet, Skeleton, and Sonner in place of Toast (this `components.json` style ships Sonner; `sonner`'s own theme detection was swapped for a `MutationObserver` on `<html class="dark">` since the app toggles dark mode by hand rather than through `next-themes`)
 - *(no `cn` work needed — the `cn` package and the `@/lib/utils` re-export are already correct; see [design-system.md §9](./design-system.md#9-the-cn-utility))*
 - vitest + `@cloudflare/vitest-pool-workers`; first unit and integration tests
 
+**Post-Phase-2 architecture update.** Adopted at the user's request, after the phase's initial build:
+- **`react-router`** replaces the plain conditional rendering App.tsx started with. URL structure: `/login`, `/register`, `/:projectSlug` (the board), `/:projectSlug/tasks/:taskId` (board + `TaskModal` open — same `Board` component, driven by the optional route param, so the modal is bookmarkable and browser-back closes it). Guarded by a `RequireAuth`/`PublicOnly` pair of route wrappers; `AuthenticatedShell` fetches the project list once and hands it to routed children via `Outlet` context so Navbar/Sidebar/Board agree on one list without introducing a separate global store for it.
+- **`zod`** replaces the hand-rolled `worker/lib/validate.ts` (deleted) — `worker/lib/schemas.ts` now defines one schema per request body, parsed via `parseOrThrow()` which converts a `ZodError` into the same `ApiError(422, "VALIDATION_FAILED", …, { field })` shape the routes always returned. Mirrored (not imported) client-side in `src/lib/schemas.ts` for the auth forms and the project/task/comment quick-create inputs — same duplication rationale as `position.ts`.
+- **`zustand`** replaces the hand-rolled pub/sub `src/lib/auth-store.ts` (deleted, moved to `src/stores/auth-store.ts`) for the auth session only, using its `persist` middleware for the `localStorage` round-trip that used to be hand-written. `useProjects`/`useTasks`/`useComments`/`useMembers` deliberately were **not** moved to zustand — they stay `useState`-in-a-hook, fetch-on-mount, with `useTasks`' optimistic-update/rollback contract unchanged.
+- Fixed a real bug surfaced while testing the router change: `GET /api/health` and `/api/info` were being swallowed by `tasks.ts`'s `use("*", authMiddleware)` (re-based to `/api/*` once mounted at `/api` — Hono composes matching handlers in registration order, and the auth middleware was registered first). Fixed by registering the two public routes before the auth-requiring mounts in `worker/index.ts`; guarded by `test/integration/health.test.ts`.
+
 **Exit criteria**
-- [ ] Register → login → reload keeps the session
-- [ ] Duplicate email → 409
-- [ ] Passwords stored only as PBKDF2 hash + per-user salt; verified by reading the table directly
-- [ ] Creating a project writes the project **and** the owner membership row in one `batch()`
-- [ ] Tasks create, edit, move, delete; order survives reload
-- [ ] Reordering writes one row, not the column
-- [ ] Non-member → **404**, not 403
-- [ ] JWT tests include `alg:none` and expiry rejection
-- [ ] Manual script M2 passes
+- [x] Register → login → reload keeps the session
+- [x] Duplicate email → 409
+- [x] Passwords stored only as PBKDF2 hash + per-user salt; verified by reading the table directly
+- [x] Creating a project writes the project **and** the owner membership row in one `batch()`
+- [x] Tasks create, edit, move, delete; order survives reload
+- [x] Reordering writes one row, not the column
+- [x] Non-member → **404**, not 403
+- [x] JWT tests include `alg:none` and expiry rejection
+- [ ] Manual script M2 passes — verified against a live `wrangler dev` instance via `curl` (M2 steps 1–4, 7) and the automated integration-test equivalent of steps 5–6 (reorder/move persistence); not run through the actual browser UI in this session (no connected browser) — worth a manual pass before calling the phase fully closed
 
 **Learns.** D1 as real SQL at the edge. Prepared statements and `.bind()`. `batch()` as the whole transaction story. Web Crypto instead of bcrypt. Fractional indexing for ordering. Why authorization reads a membership table.
 

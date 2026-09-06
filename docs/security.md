@@ -250,6 +250,8 @@ WHERE t.id = ?;
 
 No row means either the task does not exist or the user is not a member — both are 404, which is exactly right. **Never** fetch the task first and check membership second; that is two round trips and one forgotten `if` away from an IDOR.
 
+Implemented as `assertTaskMembership(db, taskId, userId, minimum)` in `worker/lib/authz.ts`, added alongside `assertMembership` in Phase 2 — same rank table, same 404-over-403 semantics, and it returns the joined task row so callers don't re-query after authorizing.
+
 ---
 
 ## 7. Turnstile

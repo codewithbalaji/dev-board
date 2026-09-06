@@ -1,6 +1,13 @@
+import { getToken } from "@/stores/auth-store";
+
 export interface DevBoardHeaders {
   colo: string;
   durationMs: number | null;
+}
+
+export interface ApiFetchOptions extends RequestInit {
+  // Register/login must never send a stale or foreign bearer token.
+  skipAuth?: boolean;
 }
 
 type Listener = (headers: DevBoardHeaders) => void;
@@ -22,8 +29,13 @@ export function subscribeHeaders(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+export async function apiFetch<T>(path: string, init?: ApiFetchOptions): Promise<T> {
+  const { skipAuth, headers, ...rest } = init ?? {};
+  const token = skipAuth ? null : getToken();
+  const res = await fetch(path, {
+    ...rest,
+    headers: token ? { ...headers, Authorization: `Bearer ${token}` } : headers,
+  });
 
   notify({
     colo: res.headers.get("X-DevBoard-Colo") ?? "LOCAL",

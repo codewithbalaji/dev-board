@@ -469,6 +469,7 @@ Base path `/api`. All responses JSON except `/api/attachments/:id/download`. `Au
 | GET | `/api/projects` | ✓ | D1, KV | 2 / 4 |
 | POST | `/api/projects` | ✓ | D1, KV | 2 |
 | GET | `/api/projects/:id` | ✓ | D1 | 2 |
+| GET | `/api/projects/:id/members` | ✓ | D1 | 2 |
 | PATCH | `/api/projects/:id` | ✓ | D1, KV | 2 |
 | DELETE | `/api/projects/:id` | ✓ | D1, R2, KV | 2 / 3 |
 | GET | `/api/projects/:id/stats` | ✓ | KV, D1 | 4 |
@@ -491,6 +492,8 @@ Base path `/api`. All responses JSON except `/api/attachments/:id/download`. `Au
 
 ¹ KV here is the rate-limit counter, not a cache.
 ² Short-lived WS token in the query string, not the session JWT.
+
+`GET /api/projects/:id/members` was added during Phase 2 build-out — not in the original route list, but required so the board can render assignee names and avatars instead of bare user ids (there was otherwise no way to resolve a `project_members` row to a display name). Read-only, viewer+, same `assertMembership` gate as every other project-scoped route. `GET /api/projects/:id`'s response also gained a `memberCount` field (a `COUNT(*)` on `project_members` added to the same handler) so the board header can show "N members" without a second request.
 
 ### Response envelope
 

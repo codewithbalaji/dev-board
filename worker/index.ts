@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env, Variables } from "./env";
 import { ApiError } from "./lib/errors";
+import auth from "./routes/auth";
+import projects from "./routes/projects";
+import tasks from "./routes/tasks";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -11,8 +14,9 @@ const getRequestCf = (request: Request) =>
 app.use(
   "*",
   cors({
-    // No auth/credentials exist yet; tighten when Phase 2 introduces cookies/bearer tokens.
+    // Bearer tokens in a header, not cookies, so a wildcard origin stays safe — no CSRF surface.
     origin: "*",
+    allowHeaders: ["Content-Type", "Authorization"],
     exposeHeaders: ["X-DevBoard-Colo", "X-DevBoard-Duration"],
   }),
 );
@@ -35,6 +39,11 @@ app.onError((err, c) => {
   return c.json({ error: { code: "INTERNAL", message: "Something went wrong" } }, 500);
 });
 
+// Registered before the route mounts below: Hono composes all matching
+// handlers for a request in registration order, and `tasks.use("*", ...)`
+// gets re-based to `/api/*` once mounted — broad enough to also match these
+// two public paths. Registering the public handlers first means they resolve
+// (and stop the chain) before that auth middleware ever runs.
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 
 app.get("/api/info", (c) => {
@@ -43,5 +52,9 @@ app.get("/api/info", (c) => {
   const region = cf?.region ?? null;
   return c.json({ colo, region, environment: c.env.ENVIRONMENT, executedAt: new Date().toISOString() });
 });
+
+app.route("/api/auth", auth);
+app.route("/api/projects", projects);
+app.route("/api", tasks);
 
 export default { fetch: app.fetch };
