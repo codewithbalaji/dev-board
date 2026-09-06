@@ -1,0 +1,268 @@
+# AGENT.md
+
+Operating manual for AI coding agents working in this repository. Read this first, in full, before touching anything.
+
+---
+
+## 1. What this project is
+
+**DevBoard** is a Kanban task manager for small dev teams — projects, tasks in three columns, comments, file attachments, live collaboration, and an activity feed. It is built on **nine Cloudflare primitives** (Workers, D1, R2, KV, Durable Objects, Queues, Turnstile, WAF/Rate Limiting, DNS/CDN/SSL) and it exists as much to master that platform as to manage tasks.
+
+That dual purpose has one overriding consequence for how you write code here:
+
+> **Never abstract away a Cloudflare API.** A repository class wrapping `env.DB`, a generic storage interface over R2 and KV, a "queue service" hiding `ACTIVITY_QUEUE.send` — all of these are tidier and all of them are wrong. Bindings are called directly, in route handlers, where a reader can see them. If you catch yourself designing an indirection layer, stop.
+
+---
+
+## 2. Current state vs. target state
+
+**Read this before assuming a file exists.**
+
+### What is actually in the repo right now
+
+```
+dev-board/
+├── .oxlintrc.json
+├── components.json              # shadcn: style radix-luma, base neutral
+├── index.html
+├── package.json                 # dev / build / lint / preview only
+├── tsconfig.json                # references app + node configs
+├── tsconfig.app.json            # src/ — ES2023 + DOM
+├── tsconfig.node.json
+├── vite.config.ts               # react + tailwind plugins, @ alias. NO server.proxy
+├── README.md                    # still the stock Vite template
+├── public/{favicon.svg, icons.svg}
+├── src/
+│   ├── App.tsx                  # near-empty
+│   ├── main.tsx
+│   ├── index.css                # Tailwind v4 + the full oklch token set
+│   ├── assets/
+│   ├── lib/utils.ts             # re-exports cn — keep it, shadcn add depends on it
+│   └── components/ui/button.tsx # the only component
+└── docs/                        # these documents
+```
+
+### What does **not** exist yet
+
+`worker/` · `wrangler.jsonc` · `tsconfig.worker.json` · `worker-configuration.d.ts` · any migration · any test · any test dependency · `.dev.vars` · `src/api/` · `src/hooks/` · any component other than `Button` · the `server.proxy` block in `vite.config.ts`.
+
+Do not write code that imports from these paths until the phase that creates them. Do not tell the user a file exists because a doc describes it — **every doc in `docs/` is a specification for unbuilt code**, tagged with the phase that builds it.
+
+### Target structure
+
+```
+worker/
+├── index.ts                     # fetch() + queue() + RealtimeBoard re-export
+├── env.ts                       # Env bindings, Hono Variables
+├── durable-objects/RealtimeBoard.ts
+├── queue/consumer.ts
+├── middleware/{auth,rate-limit,turnstile,security-headers}.ts
+├── routes/{auth,projects,tasks,attachments,activities,ws}.ts
+├── lib/{jwt,password,authz,cache,cache-keys,errors}.ts
+└── db/{schema.sql, migrations/}
+
+src/
+├── api/client.ts
+├── hooks/{useAuth,useProjects,useRealtime}.ts
+├── components/{layout,kanban,activity,auth,ui}/
+├── App.tsx
+└── index.css
+```
+
+---
+
+## 3. Commands
+
+### Work today
+
+| Command | Does |
+| :--- | :--- |
+| `npm run dev` | Vite dev server on :5173 |
+| `npm run build` | `tsc -b && vite build` — typechecks `src/` and builds to `./dist` |
+| `npm run lint` | oxlint |
+| `npm run preview` | Preview the production build |
+
+### Added by a later phase — do not reference them as if they work
+
+| Command | Phase |
+| :--- | :---: |
+| `npm run worker:dev` (`wrangler dev`) | 1 |
+| `npm run worker:check` (`tsc -p tsconfig.worker.json --noEmit`) | 1 |
+| `npm run cf-typegen` (`wrangler types`) | 1 |
+| `npm run db:migrate` (local D1 migrations) | 2 |
+| `npm test` (vitest + `@cloudflare/vitest-pool-workers`) | 2 |
+| `npm run deploy` | 8 |
+
+Wrangler is invoked through `npx`, never installed globally.
+
+---
+
+## 4. Verification gates
+
+Run **all applicable** gates before reporting any task complete. Never claim done without running them.
+
+```bash
+npm run lint
+npm run build
+npm run worker:check     # once Phase 1 exists
+npm test                 # once Phase 2 exists
+```
+
+`npm run build` and `npm run worker:check` are **both** required and neither substitutes for the other. They compile different trees with different libs — `tsconfig.app.json` includes `DOM` and covers `src/`; `tsconfig.worker.json` deliberately excludes `DOM` and covers `worker/`. A Worker file referencing `document` passes the first and fails the second. That is the point.
+
+If you changed `wrangler.jsonc`, also run `npx wrangler types` and commit the regenerated `worker-configuration.d.ts`.
+
+---
+
+## 5. Hard rules
+
+Violating any of these means the change is wrong regardless of whether it works.
+
+1. **Never abstract Cloudflare bindings.** Call `env.DB`, `env.KV`, `env.BUCKET`, `env.REALTIME_BOARD`, `env.ACTIVITY_QUEUE` directly in handlers.
+2. **Never edit `worker-configuration.d.ts`.** It is generated by `wrangler types`.
+3. **Never create `tailwind.config.js`.** Tailwind v4 is CSS-first; `src/index.css` is the config. Adding one silently breaks the setup.
+4. **Never commit a secret.** Not in `wrangler.jsonc`, not in source, not in a test fixture. Secrets go through `wrangler secret put`; local values live in gitignored `.dev.vars`.
+5. **Migrations are append-only.** Once a numbered migration has been applied anywhere remote, it is frozen. Fix forward with a new file.
+6. **Never interpolate into SQL.** `.prepare(...).bind(...)`, always, with no exceptions.
+7. **Never use Node built-ins in `worker/`.** No `fs`, no `path`, no `Buffer`, no `crypto` module. Use Web APIs — `crypto.subtle`, `TextEncoder`, `Uint8Array`.
+8. **Never treat module scope as a cache.** Isolates are per-request and per-location. Caching goes in KV; single-instance state goes in a Durable Object.
+9. **Never rely on Durable Object instance fields surviving hibernation.** Rebuild from `ctx.getWebSockets()` and socket attachments.
+10. **Never hardcode a colour.** No `text-white`, no `bg-neutral-100`. Semantic tokens only — that is what makes dark mode work.
+11. **Never use `dangerouslySetInnerHTML`.** React's escaping is the XSS defence and it must stay intact.
+12. **Every project-scoped route calls `assertMembership`.** Broken object-level authorization is the likeliest real vulnerability in this app.
+13. **A non-member gets 404, not 403.** 403 confirms the resource exists.
+14. **Update the docs in the same commit as the code.** These documents are the spec; a divergence makes them worse than nothing.
+
+---
+
+## 6. Conventions
+
+### TypeScript
+
+`tsconfig.app.json` already enables `noUnusedLocals`, `noUnusedParameters`, `erasableSyntaxOnly`, `noFallthroughCasesInSwitch`, and `verbatimModuleSyntax`. Match them in `tsconfig.worker.json` and do not loosen them.
+
+- `verbatimModuleSyntax` means type-only imports need the keyword: `import type { Env } from "./env"`.
+- `erasableSyntaxOnly` bans enums and parameter properties. Use `const` objects with `as const` and a derived union type.
+- No `any`. Use `unknown` and narrow. No `@ts-expect-error` without a comment explaining why.
+- `import { x } from "@/lib/utils"` in `src/`. The `@` alias does **not** exist in `worker/` — use relative imports there.
+
+### Worker route modules
+
+```ts
+import { Hono } from "hono";
+import type { Env, Variables } from "../env";
+
+const tasks = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+tasks.patch("/:id/status", async (c) => {
+  const user = c.get("user");
+  const taskId = c.req.param("id");
+  const { status } = await c.req.json<{ status: TaskStatus }>();
+
+  // 1. validate
+  if (!TASK_STATUSES.includes(status)) {
+    throw new ApiError(422, "VALIDATION_FAILED", "Invalid status", { field: "status" });
+  }
+
+  // 2. authorize — resolve task → project → membership in ONE query
+  const task = await c.env.DB.prepare(
+    `SELECT t.*, pm.role FROM tasks t
+     JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = ?
+     WHERE t.id = ?`
+  ).bind(user.id, taskId).first<TaskRow & { role: Role }>();
+  if (!task) throw new ApiError(404, "NOT_FOUND", "Task not found");
+
+  // 3. mutate D1 — the durable write, first and unconditional
+  const res = await c.env.DB.prepare(
+    "UPDATE tasks SET status = ?, updated_at = unixepoch() WHERE id = ?"
+  ).bind(status, taskId).run();
+  if (res.meta.changes === 0) throw new ApiError(404, "NOT_FOUND", "Task not found");
+
+  // 4. invalidate cache — awaited, before responding
+  await c.env.KV.delete(cacheKeys.projectStats(task.project_id));
+
+  // 5. enqueue activity
+  await c.env.ACTIVITY_QUEUE.send({ /* … */ });
+
+  // 6. broadcast — never let a failure here fail the request
+  c.executionCtx.waitUntil(broadcastToBoard(c.env, task.project_id, { /* … */ }));
+
+  return c.json({ task: toApiTask({ ...task, status }) });
+});
+
+export default tasks;
+```
+
+That six-step order is the house pattern: **validate → authorize → durable write → invalidate → enqueue → broadcast**. Follow it. Deviating produces the two bugs that matter — stale caches and IDOR.
+
+### Components
+
+Follow `src/components/ui/button.tsx` exactly: `cva` for variants, `data-slot` / `data-variant` / `data-size` on the root, `asChild` via `Slot.Root`, `className` last through `cn()`, `React.ComponentProps<"element">` for props, named exports, no `forwardRef` (React 19 passes `ref` as a prop). Full detail in [docs/design-system.md §8](./docs/design-system.md#8-the-house-component-pattern).
+
+### Naming
+
+| Thing | Convention |
+| :--- | :--- |
+| D1 tables and columns | `snake_case`, plural tables |
+| API JSON | `camelCase` — map explicitly, never ship raw D1 rows |
+| Files in `worker/` | `kebab-case.ts`; DO classes `PascalCase.ts` |
+| React components | `PascalCase.tsx` |
+| Hooks | `useThing.ts` |
+| KV keys | Built only through `worker/lib/cache-keys.ts` |
+| Error codes | `SCREAMING_SNAKE` in the error envelope |
+
+### Errors
+
+Throw `ApiError(status, code, message, details?)`. The Hono `onError` handler renders `{ error: { code, message, details } }`. Never leak an exception message to a client; `console.error` the real one — Workers Logs captures it.
+
+### Logging
+
+Log objects, not strings, so the dashboard can filter on fields. Never log a password, token, hash, or secret — log the decision, not the material.
+
+---
+
+## 7. Documentation index
+
+| Doc | Read it when |
+| :--- | :--- |
+| [docs/product.md](./docs/product.md) | You need to know what a feature is *for*, or what "done" means for a user story |
+| [docs/architecture.md](./docs/architecture.md) | Adding a route, choosing a primitive, tracing a request, or touching the `Env` shape |
+| [docs/database.md](./docs/database.md) | **Any** schema, migration, KV key, or R2 key work. The source of truth for all four stores |
+| [docs/security.md](./docs/security.md) | Auth, authorization, uploads, headers, secrets, rate limiting |
+| [docs/testing.md](./docs/testing.md) | Writing a test, or deciding whether a change is verified |
+| [docs/deployment.md](./docs/deployment.md) | `wrangler.jsonc`, local dev setup, provisioning, deploying, rollback |
+| [docs/roadmap.md](./docs/roadmap.md) | Starting or finishing a phase. Holds the status table |
+| [docs/design-system.md](./docs/design-system.md) | Tokens, components, Tailwind v4, accessibility |
+| [DESIGN.md](./DESIGN.md) | Screen layout, states, motion, optimistic/realtime reconciliation, copy |
+
+These ten documents are the complete specification. The original single-page implementation plan they were derived from has been deleted as superseded; it remains in git history at commit `262185f` if you ever need the original framing.
+
+`README.md` is still the stock Vite template. Rewriting it is a **Phase 8** deliverable — do not touch it before then.
+
+---
+
+## 8. How to work a phase
+
+1. **Read the phase** in [docs/roadmap.md](./docs/roadmap.md) — goal, deliverables, exit criteria, and its "watch for" list. That list exists to save you the specific hour each phase is known to cost.
+2. **Read the owning doc** for the detail: schema → `database.md`, routes → `architecture.md`, UI → `DESIGN.md` + `design-system.md`, anything auth-adjacent → `security.md`.
+3. **Build the Worker first**, verified with `curl`. A working API before any UI means a UI bug is never confused with an API bug.
+4. **Write tests alongside**, not after. Every mutating route gets the seven cases in [docs/testing.md §5](./docs/testing.md#5-integration-tests--routes-against-real-bindings) — especially the non-member 404 and the cache-invalidation assertion, which are the two that get skipped.
+5. **Run the gates** (§4).
+6. **Run the phase's manual script** (M1–M9 in `testing.md`). Some things — cross-window realtime, visible queue lag, CSP behaviour — cannot be automated meaningfully.
+7. **Update the docs and the roadmap status table in the same commit.**
+
+---
+
+## 9. Before you report a task complete
+
+- [ ] All applicable gates in §4 actually run, and passed — not assumed
+- [ ] No hard rule in §5 violated
+- [ ] New routes: validate → authorize → write → invalidate → enqueue → broadcast
+- [ ] New routes have `assertMembership` and return 404 (not 403) to non-members
+- [ ] Any cached data touched by a mutation is invalidated, and a test asserts it
+- [ ] New components use only semantic tokens and were checked in both themes
+- [ ] New interactive UI is keyboard-operable
+- [ ] Docs updated in the same commit; roadmap status current
+- [ ] Report what you actually verified. If a gate did not run, say so
+
+If something in these docs is wrong, or the code has to diverge from the spec, **fix the doc in the same change**. Silent divergence is the failure mode that makes all ten of these files worthless.
