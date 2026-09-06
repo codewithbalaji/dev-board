@@ -4,7 +4,7 @@
 >
 > Start at [AGENT.md](../AGENT.md) · Related: [database.md](./database.md) · [security.md](./security.md) · [deployment.md](./deployment.md)
 
-**Status:** Specification. The repo currently contains only the Vite/React frontend scaffold. `worker/` and `wrangler.jsonc` arrive in **Phase 1**.
+**Status:** Phase 1 done — `worker/`, `wrangler.jsonc`, and the Hono app (`/api/health`, `/api/info`, CORS + timing middleware, `onError`) exist. No storage bindings yet; those arrive in Phases 2–6.
 
 ---
 

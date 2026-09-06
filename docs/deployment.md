@@ -4,7 +4,7 @@
 >
 > Start at [AGENT.md](../AGENT.md) · Related: [architecture.md](./architecture.md) · [database.md](./database.md) · [security.md](./security.md)
 
-**Status:** Specification. `wrangler.jsonc` does not exist yet — it arrives in **Phase 1** and grows a binding per phase. The static-assets and production-deploy steps are **Phase 8**.
+**Status:** Phase 1 done — `wrangler.jsonc`, `tsconfig.worker.json`, the Vite proxy, and the `worker:*`/`cf-typegen` scripts exist. `wrangler.jsonc` grows a binding per phase as each one lands (see the note in §4). The static-assets and production-deploy steps are **Phase 8**, still unbuilt.
 
 ---
 
@@ -43,7 +43,7 @@ flowchart LR
 
 ### Scripts
 
-Only `dev`, `build`, `lint`, and `preview` exist in `package.json` today. **Phase 1 adds:**
+`dev`, `build`, `lint`, and `preview` exist from Phase 0. **Phase 1 added:**
 
 ```jsonc
 {
@@ -99,7 +99,7 @@ The Worker is a different runtime from the browser and needs its own compiler co
     "lib": ["ES2022"],
     "module": "esnext",
     "moduleResolution": "bundler",
-    "types": ["@cloudflare/workers-types/2023-07-01"],
+    "types": ["@cloudflare/workers-types"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -112,6 +112,8 @@ The Worker is a different runtime from the browser and needs its own compiler co
 ```
 
 `npx wrangler types` regenerates `worker-configuration.d.ts` from `wrangler.jsonc`. Run it after every binding change. **That file is generated — never edit it.**
+
+Note: `@cloudflare/workers-types` v5+ (installed in this repo) dropped the dated subpath exports (`/2023-07-01`) in favour of a single rolling `types` entry point — use `["@cloudflare/workers-types"]`, not the dated path some older examples show.
 
 ---
 
@@ -143,7 +145,7 @@ For KV and Queues specifically, `wrangler dev --remote` runs your code on Cloudf
 
 ## 4. `wrangler.jsonc`
 
-The whole configuration, annotated. Bindings are commented with the phase that introduces them — Phase 1 starts with just the top block plus `d1_databases` stubbed out, and each subsequent phase uncomments its own.
+The whole configuration, annotated — this is the **target shape after all phases**, not what Phase 1 ships. In the repo, `wrangler.jsonc` stays minimal: each phase adds its own binding block for real when it lands, rather than carrying other phases' blocks pre-written and commented out. Commented-out JSON config isn't type-checked or linted by anything, so it's the kind of dead weight that silently drifts from what the code actually declares — the annotations below are a map of what's coming, not a template to paste in early.
 
 ```jsonc
 {

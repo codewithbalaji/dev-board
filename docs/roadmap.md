@@ -13,7 +13,7 @@ Update this table in the same commit that completes a phase. It is the project's
 | # | Phase | Primitive | Status |
 | :---: | :--- | :--- | :--- |
 | 0 | Frontend scaffold | — | ✅ **Done** |
-| 1 | Worker, router, app shell | Workers | ⬜ Not started |
+| 1 | Worker, router, app shell | Workers | ✅ **Done** |
 | 2 | Database, auth, tasks CRUD | D1 | ⬜ Not started |
 | 3 | File attachments | R2 | ⬜ Not started |
 | 4 | Caching & edge config | KV | ⬜ Not started |

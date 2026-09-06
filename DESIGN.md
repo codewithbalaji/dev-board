@@ -4,7 +4,7 @@
 >
 > For the concrete tokens, component API, and a11y checklist, see [docs/design-system.md](./docs/design-system.md). Start at [AGENT.md](./AGENT.md).
 
-**Status:** Specification. Only the app shell scaffold exists today; every screen below is unbuilt.
+**Status:** Specification. Phase 1 built a minimal Navbar (logo + theme toggle only) and a Phase-1-scoped Inspector bar (colo + duration only, no service pills yet); every other screen below — auth, the Kanban board, the task modal, the activity feed, and the full navbar with project switcher/tabs/avatar — is unbuilt.
 
 ---
 
