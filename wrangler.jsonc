@@ -15,6 +15,12 @@
       "migrations_dir": "worker/db/migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "devboard-attachments"
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

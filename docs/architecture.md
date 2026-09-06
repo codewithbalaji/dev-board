@@ -487,11 +487,12 @@ Base path `/api`. All responses JSON except `/api/attachments/:id/download`. `Au
 | GET | `/api/tasks/:id/attachments` | ✓ | D1 | 3 |
 | POST | `/api/tasks/:id/attachments` | ✓ | R2, D1, Queue | 3 |
 | GET | `/api/attachments/:id/download` | ✓ | D1, R2 | 3 |
-| DELETE | `/api/attachments/:id` | ✓ | D1, R2, Queue | 3 |
+| DELETE | `/api/attachments/:id` | ✓ | D1, R2, Queue | 3³ |
 | GET | `/api/ws?projectId=&token=` | ✓² | DO | 5 |
 
 ¹ KV here is the rate-limit counter, not a cache.
 ² Short-lived WS token in the query string, not the session JWT.
+³ Returns `204 No Content`, not the `200 { deleted: true }` every other delete route in the app uses — this is the app's first semantically-correct delete response. The older `DELETE /api/tasks/:id` and `DELETE /api/comments/:id` were left as `200` rather than retrofitted, to avoid touching already-verified Phase 2 routes and their tests; converting them to `204` is a reasonable follow-up but out of scope for Phase 3.
 
 `GET /api/projects/:id/members` was added during Phase 2 build-out — not in the original route list, but required so the board can render assignee names and avatars instead of bare user ids (there was otherwise no way to resolve a `project_members` row to a display name). Read-only, viewer+, same `assertMembership` gate as every other project-scoped route. `GET /api/projects/:id`'s response also gained a `memberCount` field (a `COUNT(*)` on `project_members` added to the same handler) so the board header can show "N members" without a second request.
 

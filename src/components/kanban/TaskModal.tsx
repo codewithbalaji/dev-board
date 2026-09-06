@@ -1,9 +1,11 @@
 import * as React from "react"
+import { toast } from "sonner"
 
 import type { Task, TaskPriority } from "@/hooks/useTasks"
 import type { Member } from "@/hooks/useMembers"
 import { useAuth } from "@/hooks/useAuth"
 import { useComments } from "@/hooks/useComments"
+import { downloadAttachment, useAttachments } from "@/hooks/useAttachments"
 import { relativeTime } from "@/lib/relative-time"
 import { createCommentSchema } from "@/lib/schemas"
 import {
@@ -15,6 +17,32 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Progress } from "@/components/ui/progress"
+
+// Mirrors worker/routes/attachments.ts's allow-list — duplicated deliberately,
+// the same way src/ and worker/ already duplicate TASK_STATUSES/TASK_PRIORITIES,
+// since the two are separate build targets. Client-side checks are just for
+// instant feedback; the server re-validates independently either way.
+const ALLOWED_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "application/zip",
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+])
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 const PRIORITY_LABEL: Record<TaskPriority, string> = {
   low: "Low",
@@ -139,15 +167,34 @@ function TaskModal({
 }) {
   const { user } = useAuth()
   const { comments, isLoading: commentsLoading, postComment } = useComments(task.id)
+  const { attachments, uploadProgress, upload, deleteAttachment } = useAttachments(task.id)
   const [draftComment, setDraftComment] = React.useState("")
+  const [isDraggingFile, setIsDraggingFile] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
   const assignee = members.find((m) => m.userId === task.assigneeId)
   const membersById = React.useMemo(() => new Map(members.map((m) => [m.userId, m])), [members])
+  const myRole = user ? membersById.get(user.id)?.role : undefined
+  const canManageAttachments = myRole === "admin" || myRole === "owner"
 
   const submitComment = () => {
     const result = createCommentSchema.safeParse({ body: draftComment })
     if (!result.success) return
     void postComment(result.data.body)
     setDraftComment("")
+  }
+
+  const submitUpload = (file: File) => {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error("Too large — 10 MB maximum")
+      return
+    }
+    if (!ALLOWED_MIME_TYPES.has(file.type)) {
+      toast.error("File type not allowed")
+      return
+    }
+    upload(file).catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Upload failed")
+    })
   }
 
   return (
@@ -164,11 +211,85 @@ function TaskModal({
           </p>
         </DialogHeader>
 
-        <div className="max-h-[60vh] overflow-y-auto">
+        <div
+          className="max-h-[60vh] overflow-y-auto"
+          onDragOver={(e) => {
+            e.preventDefault()
+            setIsDraggingFile(true)
+          }}
+          onDragLeave={() => setIsDraggingFile(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setIsDraggingFile(false)
+            const file = e.dataTransfer.files[0]
+            if (file) submitUpload(file)
+          }}
+        >
           <InlineEditableDescription
             value={task.description}
             onCommit={(description) => onUpdate({ description })}
           />
+
+          <div
+            className={
+              isDraggingFile
+                ? "mt-4 flex flex-col gap-2 rounded-md border-2 border-dashed border-primary bg-primary/5 p-2"
+                : "mt-4 flex flex-col gap-2"
+            }
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">
+                Attachments ({attachments.length})
+              </p>
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                + Add file
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) submitUpload(file)
+                  e.target.value = ""
+                }}
+              />
+            </div>
+
+            {uploadProgress !== null && <Progress value={uploadProgress} />}
+
+            {attachments.map((attachment) => {
+              const canDelete = attachment.uploadedBy === user?.id || canManageAttachments
+              return (
+                <div
+                  key={attachment.id}
+                  className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5 text-sm"
+                >
+                  <button
+                    type="button"
+                    onClick={() => void downloadAttachment(attachment.id, attachment.filename)}
+                    className="truncate text-left hover:underline"
+                    title={`Download ${attachment.filename}`}
+                  >
+                    {attachment.filename}
+                  </button>
+                  <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                    <span>{formatSize(attachment.size)}</span>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => deleteAttachment(attachment.id)}
+                        aria-label={`Delete ${attachment.filename}`}
+                        className="hover:text-destructive"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
 
           <div className="mt-4 flex flex-col gap-3">
             <p className="text-xs font-medium text-muted-foreground">Comments</p>

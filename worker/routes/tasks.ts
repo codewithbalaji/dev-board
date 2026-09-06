@@ -169,6 +169,17 @@ tasks.delete("/tasks/:id", async (c) => {
   const taskId = c.req.param("id");
   await assertTaskMembership(c.env.DB, taskId, user.id, "member");
 
+  // R2 objects don't fall under D1's ON DELETE CASCADE — clean them up first,
+  // or the task delete below orphans them in the bucket.
+  const { results: fileRows } = await c.env.DB.prepare(
+    "SELECT file_key FROM attachments WHERE task_id = ?",
+  )
+    .bind(taskId)
+    .all<{ file_key: string }>();
+  if (fileRows.length > 0) {
+    await c.env.BUCKET.delete(fileRows.map((r) => r.file_key));
+  }
+
   await c.env.DB.prepare("DELETE FROM tasks WHERE id = ?").bind(taskId).run();
   return c.json({ deleted: true });
 });

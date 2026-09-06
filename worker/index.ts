@@ -5,6 +5,7 @@ import { ApiError } from "./lib/errors";
 import auth from "./routes/auth";
 import projects from "./routes/projects";
 import tasks from "./routes/tasks";
+import attachments from "./routes/attachments";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -56,5 +57,6 @@ app.get("/api/info", (c) => {
 app.route("/api/auth", auth);
 app.route("/api/projects", projects);
 app.route("/api", tasks);
+app.route("/api", attachments);
 
 export default { fetch: app.fetch };

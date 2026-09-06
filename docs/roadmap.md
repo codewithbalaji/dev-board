@@ -15,7 +15,7 @@ Update this table in the same commit that completes a phase. It is the project's
 | 0 | Frontend scaffold | — | ✅ **Done** |
 | 1 | Worker, router, app shell | Workers | ✅ **Done** |
 | 2 | Database, auth, tasks CRUD | D1 | ✅ **Done** (backend verified end-to-end; manual browser pass of M2 still outstanding) |
-| 3 | File attachments | R2 | ⬜ Not started |
+| 3 | File attachments | R2 | ✅ **Done** (backend verified via automated integration tests; manual browser pass of M3 still outstanding) |
 | 4 | Caching & edge config | KV | ⬜ Not started |
 | 5 | Realtime collaboration | Durable Objects | ⬜ Not started |
 | 6 | Activity feed | Queues | ⬜ Not started |
@@ -139,13 +139,13 @@ The largest phase. Consider splitting the commit into 2a (schema + auth) and 2b 
 - Upload UI in `TaskModal` with `Progress`; drag-to-upload
 
 **Exit criteria**
-- [ ] Upload with progress; badge count increments
-- [ ] Download sends the right filename and `Content-Disposition: attachment`
-- [ ] Oversize → 413; SVG → 415
-- [ ] Delete removes from R2 **and** D1; the URL then 404s
-- [ ] Deleting a task cleans up its objects
-- [ ] Body is streamed to R2, never buffered
-- [ ] Manual script M3 passes
+- [x] Upload with progress; badge count increments
+- [x] Download sends the right filename and `Content-Disposition: attachment`
+- [x] Oversize → 413; SVG → 415
+- [x] Delete removes from R2 **and** D1; the URL then 404s
+- [x] Deleting a task cleans up its objects
+- [x] Body is streamed to R2 (`file.stream()` into `BUCKET.put`), never buffered into a Buffer/array
+- [ ] Manual script M3 passes — verified against the vitest-pool-workers integration suite (`test/integration/attachments.test.ts`, 17 cases: upload/list/download/delete happy paths, CSV/XLSX acceptance, non-member 404, insufficient-role 403, oversize 413, SVG 415, missing-file 422, task-delete cascade); not yet run through the actual browser UI (no connected browser in this session) — worth a manual pass before calling the phase fully closed
 
 **Learns.** Why blobs live outside the relational database. R2's zero-egress model and what it replaces. Streaming request bodies. That "cascade" does not cross storage systems.
 

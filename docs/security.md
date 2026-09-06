@@ -442,7 +442,7 @@ Untrusted files are the sharpest edge in the app.
 | Control | Rule | Why |
 | :--- | :--- | :--- |
 | Size | 10 MB per file, enforced via `Content-Length` **and** by counting bytes as the stream is consumed | A lying `Content-Length` is trivial |
-| MIME allow-list | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `application/pdf`, `text/plain`, `text/markdown`, `application/zip` | An allow-list fails closed; a block-list fails open |
+| MIME allow-list | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `application/pdf`, `text/plain`, `text/markdown`, `application/zip`, `text/csv`, `application/vnd.ms-excel` (`.xls`), `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (`.xlsx`) | An allow-list fails closed; a block-list fails open |
 | **No SVG** | Excluded from the allow-list | SVG is an XML document that can carry `<script>`. It is an XSS vector wearing an image costume |
 | Extension | Derived from the validated MIME type, not from the filename | Filename is user input |
 | Object key | `attachments/{projectId}/{taskId}/{uuid}{ext}` — fully server-generated | No traversal, no collision, no overwrite of someone else's object |
