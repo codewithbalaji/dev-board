@@ -2,6 +2,7 @@ import * as React from "react"
 import { cn } from "cn"
 
 import { apiFetch, getLastHeaders, subscribeHeaders, type DevBoardHeaders } from "@/api/client"
+import type { ConnectionState, PresenceMember } from "@/hooks/useRealtime"
 
 interface InfoResponse {
   colo: string
@@ -10,8 +11,27 @@ interface InfoResponse {
   executedAt: string
 }
 
-function CloudflareBar({ className, ...props }: React.ComponentProps<"div">) {
+const CACHE_PILL_STYLES: Record<NonNullable<DevBoardHeaders["cache"]>, string> = {
+  HIT: "bg-primary text-primary-foreground",
+  MISS: "border border-border bg-muted text-muted-foreground",
+  BYPASS: "border border-dashed border-border bg-muted text-muted-foreground",
+}
+
+const CONNECTION_DOT_STYLES: Record<ConnectionState, string> = {
+  connected: "bg-emerald-500",
+  reconnecting: "bg-amber-500",
+  offline: "border border-muted-foreground bg-transparent",
+}
+
+interface CloudflareBarProps extends React.ComponentProps<"div"> {
+  projectId?: string | null
+  connectionState?: ConnectionState
+  presence?: PresenceMember[]
+}
+
+function CloudflareBar({ className, projectId, connectionState, presence, ...props }: CloudflareBarProps) {
   const [headers, setHeaders] = React.useState<DevBoardHeaders>(getLastHeaders)
+  const [isPurging, setIsPurging] = React.useState(false)
 
   React.useEffect(() => subscribeHeaders(setHeaders), [])
 
@@ -22,6 +42,18 @@ function CloudflareBar({ className, ...props }: React.ComponentProps<"div">) {
   }, [])
 
   const isLocal = headers.colo === "LOCAL"
+
+  const handlePurge = async () => {
+    if (!projectId) return
+    setIsPurging(true)
+    try {
+      await apiFetch(`/api/projects/${projectId}/cache/purge`, { method: "POST" })
+    } catch {
+      // Purge is a convenience action — a failure here isn't worth surfacing.
+    } finally {
+      setIsPurging(false)
+    }
+  }
 
   return (
     <div
@@ -41,6 +73,33 @@ function CloudflareBar({ className, ...props }: React.ComponentProps<"div">) {
       <span className="w-16 shrink-0 tabular-nums" title="Round-trip duration">
         {headers.durationMs !== null ? `${headers.durationMs}ms` : "—"}
       </span>
+      {headers.cache && (
+        <span
+          className={cn("shrink-0 rounded px-1.5 py-0.5 font-medium", CACHE_PILL_STYLES[headers.cache])}
+          title="KV cache status for the last request"
+        >
+          {headers.cache}
+        </span>
+      )}
+      {connectionState && (
+        <span
+          className="flex shrink-0 items-center gap-1"
+          title={presence?.length ? presence.map((p) => p.displayName).join(", ") : undefined}
+        >
+          <span className={cn("h-1.5 w-1.5 rounded-full", CONNECTION_DOT_STYLES[connectionState])} />
+          {connectionState === "connected" ? `${presence?.length ?? 0} live` : connectionState}
+        </span>
+      )}
+      {projectId && (
+        <button
+          type="button"
+          onClick={handlePurge}
+          disabled={isPurging}
+          className="shrink-0 rounded border border-border px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+        >
+          {isPurging ? "Purging…" : "Purge cache"}
+        </button>
+      )}
     </div>
   )
 }

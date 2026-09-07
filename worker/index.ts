@@ -6,6 +6,8 @@ import auth from "./routes/auth";
 import projects from "./routes/projects";
 import tasks from "./routes/tasks";
 import attachments from "./routes/attachments";
+import config from "./routes/config";
+import ws from "./routes/ws";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -18,7 +20,7 @@ app.use(
     // Bearer tokens in a header, not cookies, so a wildcard origin stays safe — no CSRF surface.
     origin: "*",
     allowHeaders: ["Content-Type", "Authorization"],
-    exposeHeaders: ["X-DevBoard-Colo", "X-DevBoard-Duration"],
+    exposeHeaders: ["X-DevBoard-Colo", "X-DevBoard-Duration", "X-DevBoard-Cache"],
   }),
 );
 
@@ -54,9 +56,21 @@ app.get("/api/info", (c) => {
   return c.json({ colo, region, environment: c.env.ENVIRONMENT, executedAt: new Date().toISOString() });
 });
 
+// Public, unauthenticated — registered before tasks/attachments below so
+// their `use("*", authMiddleware)` (re-based to `/api/*` once mounted) never
+// gets a chance to intercept it. Same registration-order rule that bit
+// /api/health and /api/info in Phase 2.
+app.route("/api/config", config);
+
+// Authenticated by a query-string ws-token, not the Authorization header —
+// registered before tasks/attachments below for the same registration-order
+// reason as /api/health and /api/info.
+app.route("/api/ws", ws);
+
 app.route("/api/auth", auth);
 app.route("/api/projects", projects);
 app.route("/api", tasks);
 app.route("/api", attachments);
 
 export default { fetch: app.fetch };
+export { RealtimeBoard } from "./durable-objects/RealtimeBoard";

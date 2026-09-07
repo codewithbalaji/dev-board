@@ -4,7 +4,10 @@ import { authMiddleware } from "../middleware/auth";
 import { ApiError } from "../lib/errors";
 import { signJWT } from "../lib/jwt";
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from "../lib/password";
-import { loginSchema, parseOrThrow, registerSchema } from "../lib/schemas";
+import { assertMembership } from "../lib/authz";
+import { loginSchema, parseOrThrow, registerSchema, wsTokenSchema } from "../lib/schemas";
+
+const WS_TOKEN_TTL_SECONDS = 5 * 60;
 
 interface UserRow {
   id: string;
@@ -67,6 +70,25 @@ auth.post("/login", async (c) => {
     c.env.JWT_SECRET,
   );
   return c.json({ user: toApiUser(row), token });
+});
+
+auth.post("/ws-token", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const { projectId } = parseOrThrow(wsTokenSchema, await c.req.json());
+  await assertMembership(c.env.DB, projectId, user.id, "viewer");
+
+  const token = await signJWT(
+    {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      typ: "ws",
+      projectId,
+      exp: Math.floor(Date.now() / 1000) + WS_TOKEN_TTL_SECONDS,
+    },
+    c.env.JWT_SECRET,
+  );
+  return c.json({ token });
 });
 
 auth.get("/me", authMiddleware, async (c) => {

@@ -232,12 +232,14 @@ export async function assertMembership(
 }
 ```
 
-| Role | Read board | Create/edit tasks | Upload | Manage members | Delete project |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| `viewer` | ✓ | | | | |
-| `member` | ✓ | ✓ | ✓ | | |
-| `admin` | ✓ | ✓ | ✓ | ✓ | |
-| `owner` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Role | Read board | Create/edit tasks | Upload | Purge cache | Manage members | Delete project |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| `viewer` | ✓ | | | | | |
+| `member` | ✓ | ✓ | ✓ | ✓ | | |
+| `admin` | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| `owner` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+**`POST /api/projects/:id/cache/purge` (Phase 4)** isn't destructive — worst case is one extra D1 batch on the next `stats` read — so it gets the same `member`-and-above bar as ordinary mutating routes, not the `owner` bar `DELETE /:id` uses.
 
 **Task- and comment-scoped routes must resolve upward.** `PATCH /api/tasks/:id` receives a task id, not a project id — so it joins to find the project and then checks membership, in one query:
 

@@ -4,6 +4,8 @@ import { authMiddleware } from "../middleware/auth";
 import { ApiError } from "../lib/errors";
 import { assertMembership, assertTaskMembership, ROLE_RANK, type TaskRow } from "../lib/authz";
 import { nextPosition } from "../lib/position";
+import { cacheKeys } from "../lib/cache-keys";
+import { broadcastToProject } from "../lib/broadcast";
 import {
   createCommentSchema,
   createTaskSchema,
@@ -12,7 +14,7 @@ import {
   updateTaskSchema,
 } from "../lib/schemas";
 
-function toApiTask(row: TaskRow, commentCount = 0) {
+export function toApiTask(row: TaskRow, commentCount = 0) {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -39,7 +41,7 @@ interface CommentRow {
   updated_at: number;
 }
 
-function toApiComment(row: CommentRow) {
+export function toApiComment(row: CommentRow) {
   return {
     id: row.id,
     taskId: row.task_id,
@@ -74,7 +76,10 @@ tasks.post("/projects/:projectId/tasks", async (c) => {
   const projectId = c.req.param("projectId");
   await assertMembership(c.env.DB, projectId, user.id, "member");
 
-  const { title, description, priority, assigneeId } = parseOrThrow(createTaskSchema, await c.req.json());
+  const { title, description, priority, assigneeId, mutationId } = parseOrThrow(
+    createTaskSchema,
+    await c.req.json(),
+  );
 
   const maxRow = await c.env.DB.prepare(
     "SELECT MAX(position) as maxPosition FROM tasks WHERE project_id = ? AND status = 'todo'",
@@ -90,9 +95,12 @@ tasks.post("/projects/:projectId/tasks", async (c) => {
   )
     .bind(id, projectId, title, description ?? null, priority ?? "medium", position, assigneeId ?? null, user.id)
     .run();
+  await c.env.KV.delete(cacheKeys.projectStats(projectId));
 
   const row = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(id).first<TaskRow>();
-  return c.json({ task: toApiTask(row as TaskRow) });
+  const apiTask = toApiTask(row as TaskRow);
+  await broadcastToProject(c.env, projectId, { type: "task.upserted", task: apiTask, mutationId });
+  return c.json({ task: apiTask });
 });
 
 tasks.get("/tasks/:id", async (c) => {
@@ -107,7 +115,7 @@ tasks.get("/tasks/:id", async (c) => {
 tasks.patch("/tasks/:id", async (c) => {
   const user = c.get("user");
   const taskId = c.req.param("id");
-  await assertTaskMembership(c.env.DB, taskId, user.id, "member");
+  const { task } = await assertTaskMembership(c.env.DB, taskId, user.id, "member");
 
   const body = parseOrThrow(updateTaskSchema, await c.req.json());
   const updates: string[] = [];
@@ -143,15 +151,23 @@ tasks.patch("/tasks/:id", async (c) => {
   }
 
   const row = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<TaskRow>();
-  return c.json({ task: toApiTask(row as TaskRow) });
+  const apiTask = toApiTask(row as TaskRow);
+  if (updates.length > 0) {
+    await broadcastToProject(c.env, task.project_id, {
+      type: "task.upserted",
+      task: apiTask,
+      mutationId: body.mutationId,
+    });
+  }
+  return c.json({ task: apiTask });
 });
 
 tasks.patch("/tasks/:id/status", async (c) => {
   const user = c.get("user");
   const taskId = c.req.param("id");
-  await assertTaskMembership(c.env.DB, taskId, user.id, "member");
+  const { task } = await assertTaskMembership(c.env.DB, taskId, user.id, "member");
 
-  const { status, position } = parseOrThrow(taskStatusSchema, await c.req.json());
+  const { status, position, mutationId } = parseOrThrow(taskStatusSchema, await c.req.json());
 
   const res = await c.env.DB.prepare(
     "UPDATE tasks SET status = ?, position = ?, updated_at = unixepoch() WHERE id = ?",
@@ -159,15 +175,18 @@ tasks.patch("/tasks/:id/status", async (c) => {
     .bind(status, position, taskId)
     .run();
   if (res.meta.changes === 0) throw new ApiError(404, "NOT_FOUND", "Task not found");
+  await c.env.KV.delete(cacheKeys.projectStats(task.project_id));
 
   const row = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<TaskRow>();
-  return c.json({ task: toApiTask(row as TaskRow) });
+  const apiTask = toApiTask(row as TaskRow);
+  await broadcastToProject(c.env, task.project_id, { type: "task.upserted", task: apiTask, mutationId });
+  return c.json({ task: apiTask });
 });
 
 tasks.delete("/tasks/:id", async (c) => {
   const user = c.get("user");
   const taskId = c.req.param("id");
-  await assertTaskMembership(c.env.DB, taskId, user.id, "member");
+  const { task } = await assertTaskMembership(c.env.DB, taskId, user.id, "member");
 
   // R2 objects don't fall under D1's ON DELETE CASCADE — clean them up first,
   // or the task delete below orphans them in the bucket.
@@ -181,6 +200,13 @@ tasks.delete("/tasks/:id", async (c) => {
   }
 
   await c.env.DB.prepare("DELETE FROM tasks WHERE id = ?").bind(taskId).run();
+  await c.env.KV.delete(cacheKeys.projectStats(task.project_id));
+  await broadcastToProject(c.env, task.project_id, {
+    type: "task.deleted",
+    taskId,
+    projectId: task.project_id,
+    mutationId: c.req.query("mutationId"),
+  });
   return c.json({ deleted: true });
 });
 
@@ -198,17 +224,24 @@ tasks.get("/tasks/:id/comments", async (c) => {
 tasks.post("/tasks/:id/comments", async (c) => {
   const user = c.get("user");
   const taskId = c.req.param("id");
-  await assertTaskMembership(c.env.DB, taskId, user.id, "member");
+  const { task } = await assertTaskMembership(c.env.DB, taskId, user.id, "member");
 
-  const { body: commentBody } = parseOrThrow(createCommentSchema, await c.req.json());
+  const { body: commentBody, mutationId } = parseOrThrow(createCommentSchema, await c.req.json());
 
   const id = crypto.randomUUID();
   await c.env.DB.prepare("INSERT INTO comments (id, task_id, author_id, body) VALUES (?, ?, ?, ?)")
     .bind(id, taskId, user.id, commentBody)
     .run();
+  await c.env.KV.delete(cacheKeys.projectStats(task.project_id));
 
   const row = await c.env.DB.prepare("SELECT * FROM comments WHERE id = ?").bind(id).first<CommentRow>();
-  return c.json({ comment: toApiComment(row as CommentRow) });
+  const apiComment = toApiComment(row as CommentRow);
+  await broadcastToProject(c.env, task.project_id, {
+    type: "comment.upserted",
+    comment: apiComment,
+    mutationId,
+  });
+  return c.json({ comment: apiComment });
 });
 
 tasks.delete("/comments/:id", async (c) => {
@@ -216,20 +249,27 @@ tasks.delete("/comments/:id", async (c) => {
   const commentId = c.req.param("id");
 
   const row = await c.env.DB.prepare(
-    `SELECT c.*, pm.role as __role
+    `SELECT c.*, t.project_id as __projectId, pm.role as __role
      FROM comments c
      JOIN tasks t ON t.id = c.task_id
      JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = ?
      WHERE c.id = ?`,
   )
     .bind(user.id, commentId)
-    .first<CommentRow & { __role: "owner" | "admin" | "member" | "viewer" }>();
+    .first<CommentRow & { __projectId: string; __role: "owner" | "admin" | "member" | "viewer" }>();
   if (!row) throw new ApiError(404, "NOT_FOUND", "Comment not found");
 
   const canDelete = row.author_id === user.id || ROLE_RANK[row.__role] >= ROLE_RANK.admin;
   if (!canDelete) throw new ApiError(403, "FORBIDDEN", "Insufficient role");
 
   await c.env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(commentId).run();
+  await c.env.KV.delete(cacheKeys.projectStats(row.__projectId));
+  await broadcastToProject(c.env, row.__projectId, {
+    type: "comment.deleted",
+    commentId,
+    taskId: row.task_id,
+    mutationId: c.req.query("mutationId"),
+  });
   return c.json({ deleted: true });
 });
 

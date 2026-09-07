@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { apiFetch } from "@/api/client";
+import type { EntityMessage } from "./useRealtime";
 
 export type TaskStatus = "todo" | "in_progress" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
@@ -34,13 +35,37 @@ export interface UseTasksResult {
 
 interface UseTasksOptions {
   onMutationError?: (message: string, retry: () => void) => void;
+  subscribe?: (handler: (message: EntityMessage) => void) => () => void;
 }
 
 export function useTasks(projectId: string | null, options: UseTasksOptions = {}): UseTasksResult {
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const { onMutationError } = options;
+  const { onMutationError, subscribe } = options;
+
+  // Mutations this client itself fired — used to drop the echo of our own
+  // broadcast (DESIGN.md §9): the REST response already reconciled local
+  // state, so re-applying the broadcast would be redundant at best.
+  const ownMutationIds = React.useRef(new Set<string>());
+
+  React.useEffect(() => {
+    if (!subscribe) return;
+    return subscribe((message: EntityMessage) => {
+      if (message.mutationId && ownMutationIds.current.delete(message.mutationId)) return;
+
+      if (message.type === "task.upserted") {
+        setTasks((prev) => {
+          const existing = prev.find((t) => t.id === message.task.id);
+          if (existing && existing.updatedAt >= message.task.updatedAt) return prev; // last-write-wins
+          if (!existing) return [...prev, message.task];
+          return prev.map((t) => (t.id === message.task.id ? message.task : t));
+        });
+      } else if (message.type === "task.deleted" && message.projectId === projectId) {
+        setTasks((prev) => prev.filter((t) => t.id !== message.taskId));
+      }
+    });
+  }, [subscribe, projectId]);
 
   const refetch = React.useCallback(async () => {
     if (!projectId) {
@@ -67,10 +92,12 @@ export function useTasks(projectId: string | null, options: UseTasksOptions = {}
   const createTask = React.useCallback(
     async (input: { title: string; description?: string; priority?: TaskPriority }) => {
       if (!projectId) throw new Error("No project selected");
+      const mutationId = crypto.randomUUID();
+      ownMutationIds.current.add(mutationId);
       const data = await apiFetch<{ task: Task }>(`/api/projects/${projectId}/tasks`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ ...input, mutationId }),
       });
       setTasks((prev) => [...prev, data.task]);
       return data.task;
@@ -86,10 +113,12 @@ export function useTasks(projectId: string | null, options: UseTasksOptions = {}
 
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status, position } : t)));
 
+    const mutationId = crypto.randomUUID();
+    ownMutationIds.current.add(mutationId);
     apiFetch<{ task: Task }>(`/api/tasks/${taskId}/status`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status, position }),
+      body: JSON.stringify({ status, position, mutationId }),
     })
       .then((data) => {
         setTasks((prev) => prev.map((t) => (t.id === taskId ? data.task : t)));
@@ -110,10 +139,12 @@ export function useTasks(projectId: string | null, options: UseTasksOptions = {}
 
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t)));
 
+    const mutationId = crypto.randomUUID();
+    ownMutationIds.current.add(mutationId);
     apiFetch<{ task: Task }>(`/api/tasks/${taskId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(patch),
+      body: JSON.stringify({ ...patch, mutationId }),
     })
       .then((data) => {
         setTasks((prev) => prev.map((t) => (t.id === taskId ? data.task : t)));
@@ -131,7 +162,9 @@ export function useTasks(projectId: string | null, options: UseTasksOptions = {}
 
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
 
-    apiFetch(`/api/tasks/${taskId}`, { method: "DELETE" }).catch((err) => {
+    const mutationId = crypto.randomUUID();
+    ownMutationIds.current.add(mutationId);
+    apiFetch(`/api/tasks/${taskId}?mutationId=${mutationId}`, { method: "DELETE" }).catch((err) => {
       setTasks((prev) => [...prev, previous]);
       const message = err instanceof Error ? err.message : "Couldn't delete the task.";
       onMutationError?.(message, () => deleteTask(taskId));

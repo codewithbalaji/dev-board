@@ -32,11 +32,14 @@ export const updateProjectSchema = z.object({
   color: z.string().min(1).max(40).optional(),
 });
 
+const mutationIdSchema = z.string().min(1).max(100).optional();
+
 export const createTaskSchema = z.object({
   title: titleSchema,
   description: descriptionSchema.optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
   assigneeId: z.uuidv4().optional(),
+  mutationId: mutationIdSchema,
 });
 
 export const updateTaskSchema = z.object({
@@ -45,15 +48,22 @@ export const updateTaskSchema = z.object({
   priority: z.enum(TASK_PRIORITIES).optional(),
   assigneeId: z.uuidv4().nullable().optional(),
   dueAt: z.number().finite().nullable().optional(),
+  mutationId: mutationIdSchema,
 });
 
 export const taskStatusSchema = z.object({
   status: z.enum(TASK_STATUSES),
   position: z.number().finite(),
+  mutationId: mutationIdSchema,
 });
 
 export const createCommentSchema = z.object({
   body: z.string().trim().min(1).max(10_000),
+  mutationId: mutationIdSchema,
+});
+
+export const wsTokenSchema = z.object({
+  projectId: z.uuidv4(),
 });
 
 // Converts the first Zod issue into the app's { code, message, details.field }

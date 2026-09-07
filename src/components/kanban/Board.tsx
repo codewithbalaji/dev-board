@@ -21,6 +21,7 @@ import { createTaskSchema } from "@/lib/schemas"
 import { useTasks, type Task, type TaskStatus } from "@/hooks/useTasks"
 import { useMembers } from "@/hooks/useMembers"
 import type { Project } from "@/hooks/useProjects"
+import type { UseRealtimeResult } from "@/hooks/useRealtime"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -129,11 +130,20 @@ function NewTaskInput({ onCreate }: { onCreate: (title: string) => void }) {
   )
 }
 
-function Board({ project, openTaskId }: { project: Project; openTaskId: string | null }) {
+function Board({
+  project,
+  openTaskId,
+  realtime,
+}: {
+  project: Project
+  openTaskId: string | null
+  realtime: UseRealtimeResult
+}) {
   const navigate = useNavigate()
   const closeTask = () => navigate(`/${project.slug}`)
   const goToTask = (taskId: string) => navigate(`/${project.slug}/tasks/${taskId}`)
   const [activeTaskId, setActiveTaskId] = React.useState<string | null>(null)
+  const [dismissedOffline, setDismissedOffline] = React.useState(false)
 
   const handleMutationError = React.useCallback((message: string, retry: () => void) => {
     toast.error(message, { action: { label: "Retry", onClick: retry } })
@@ -141,8 +151,13 @@ function Board({ project, openTaskId }: { project: Project; openTaskId: string |
 
   const { tasks, isLoading, error, createTask, moveTask, updateTask, deleteTask, refetch } = useTasks(project.id, {
     onMutationError: handleMutationError,
+    subscribe: realtime.subscribe,
   })
   const members = useMembers(project.id)
+
+  React.useEffect(() => {
+    if (realtime.connectionState !== "offline") setDismissedOffline(false)
+  }, [realtime.connectionState])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -200,6 +215,19 @@ function Board({ project, openTaskId }: { project: Project; openTaskId: string |
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {realtime.connectionState === "offline" && !dismissedOffline && (
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-1.5 text-xs text-muted-foreground">
+          <span>Live updates paused. Reload to reconnect.</span>
+          <button
+            type="button"
+            onClick={() => setDismissedOffline(true)}
+            className="shrink-0 hover:text-foreground"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
           <h1 className="text-base font-semibold">{project.name}</h1>
@@ -261,6 +289,7 @@ function Board({ project, openTaskId }: { project: Project; openTaskId: string |
         <TaskModal
           task={openTask}
           members={members}
+          subscribe={realtime.subscribe}
           onClose={closeTask}
           onUpdate={(patch) => updateTask(openTask.id, patch)}
           onDelete={() => {

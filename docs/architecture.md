@@ -191,6 +191,7 @@ worker/
 │   ├── projects.ts              # Phase 2 (+ KV stats in Phase 4)
 │   ├── tasks.ts                 # Phase 2
 │   ├── attachments.ts           # Phase 3
+│   ├── config.ts                # Phase 4 — public GET /api/config reading config:*
 │   ├── activities.ts            # Phase 6
 │   └── ws.ts                    # Phase 5 — upgrade & forward to DO
 ├── lib/
@@ -592,7 +593,7 @@ src/
 
 **Realtime and optimistic updates are separate systems that must agree.** The rule: a mutating client applies its change optimistically and ignores the echo of its own broadcast (matched by a client-generated `mutationId` round-tripped through the DO). Non-mutating clients apply the broadcast directly. Reconciliation policy is last-write-wins on `updated_at`, with a toast when an incoming change overwrites a local edit — see [DESIGN.md](../DESIGN.md).
 
-**Local dev topology** (Phase 1): Vite on `5173` proxies `/api` and `/ws` to `wrangler dev` on `8787`. That proxy block does not exist in `vite.config.ts` yet; it is specified in [deployment.md](./deployment.md). In production there is no proxy, because one Worker serves both.
+**Local dev topology** (Phase 1): Vite on `5173` proxies `/api` (`ws: true`, added in Phase 5) to `wrangler dev` on `8787`. The realtime route lives at `/api/ws`, so it already falls under that one entry — there is no separate `/ws` proxy. Specified in [deployment.md](./deployment.md). In production there is no proxy, because one Worker serves both.
 
 ---
 

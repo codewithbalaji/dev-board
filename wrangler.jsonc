@@ -21,6 +21,26 @@
       "bucket_name": "devboard-attachments"
     }
   ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "<paste from `wrangler kv namespace create`>"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REALTIME_BOARD",
+        "class_name": "RealtimeBoard"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RealtimeBoard"]
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

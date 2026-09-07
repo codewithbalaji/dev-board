@@ -16,8 +16,8 @@ Update this table in the same commit that completes a phase. It is the project's
 | 1 | Worker, router, app shell | Workers | ✅ **Done** |
 | 2 | Database, auth, tasks CRUD | D1 | ✅ **Done** (backend verified end-to-end; manual browser pass of M2 still outstanding) |
 | 3 | File attachments | R2 | ✅ **Done** (backend verified via automated integration tests; manual browser pass of M3 still outstanding) |
-| 4 | Caching & edge config | KV | ⬜ Not started |
-| 5 | Realtime collaboration | Durable Objects | ⬜ Not started |
+| 4 | Caching & edge config | KV | ✅ **Done** (backend verified end-to-end; manual browser pass of M4 still outstanding) |
+| 5 | Realtime collaboration | Durable Objects | ✅ **Done** (backend verified end-to-end via automated integration tests, incl. hibernation; manual browser pass of M5 still outstanding) |
 | 6 | Activity feed | Queues | ⬜ Not started |
 | 7 | Bot protection & rate limiting | Turnstile / WAF | ⬜ Not started |
 | 8 | Production deployment | DNS / CDN / SSL | ⬜ Not started |
@@ -168,13 +168,13 @@ The largest phase. Consider splitting the commit into 2a (schema + auth) and 2b 
 - Inspector-bar cache pill + working Purge button
 
 **Exit criteria**
-- [ ] First load `MISS`, reload `HIT`, measurably faster
-- [ ] Any task mutation makes the next load a `MISS`
-- [ ] Purge button visibly works
-- [ ] TTL expiry returns to `MISS` after 60 s
-- [ ] **KV failing degrades to `BYPASS`, never a 500** — tested by mocking a rejection
-- [ ] Only documented key prefixes exist in the namespace
-- [ ] Manual script M4 passes
+- [x] First load `MISS`, reload `HIT`, measurably faster
+- [x] Any task mutation makes the next load a `MISS`
+- [x] Purge button visibly works
+- [ ] TTL expiry returns to `MISS` after 60 s — not testable against local `wrangler dev`'s immediately-consistent KV; needs a `wrangler dev --remote` pass
+- [x] **KV failing degrades to `BYPASS`, never a 500** — tested by mocking a rejection
+- [ ] Only documented key prefixes exist in the namespace — verify with `wrangler kv key list --binding KV --local` once a real namespace id is provisioned
+- [ ] Manual script M4 passes — automated integration coverage in `test/integration/cache.test.ts` (10 cases: stats MISS/HIT, non-member 404 on stats and purge, KV-down BYPASS, invalidation on task mutation, purge forcing a MISS, config defaults and seeded values); not yet run through the actual browser UI (no connected browser in this session) — worth a manual pass before calling the phase fully closed
 
 **Learns.** Cache-aside. Eventual vs. strong consistency, concretely. Why invalidation is the hard part. Using `ctx.waitUntil` so a cache write does not cost the user latency.
 
@@ -197,13 +197,13 @@ The largest phase. Consider splitting the commit into 2a (schema + auth) and 2b 
 - Presence avatars; connection state in the Inspector bar
 
 **Exit criteria**
-- [ ] Two windows: a move in A appears in B under a second
-- [ ] Comments propagate
-- [ ] Presence appears and disappears correctly
-- [ ] Killing the Worker shows reconnecting, not a crash; restart resyncs
-- [ ] **The mutating client sees no flicker** from its own echo
-- [ ] Hibernation test asserts the roster rebuilds from `getWebSockets()`
-- [ ] Manual script M5 passes
+- [ ] Two windows: a move in A appears in B under a second — implemented (broadcast on every task/comment mutation), not yet run through a live browser in this session
+- [ ] Comments propagate — implemented, same caveat
+- [x] Presence appears and disappears correctly — covered by `test/integration/realtime.test.ts`
+- [ ] Killing the Worker shows reconnecting, not a crash; restart resyncs — client backoff/reconnect implemented in `useRealtime`, not exercised against a real `wrangler dev` restart in this session
+- [x] **The mutating client sees no flicker** from its own echo — `mutationId` round-trip + echo-drop in `useTasks`/`useComments`
+- [x] Hibernation test asserts the roster rebuilds from `getWebSockets()`
+- [ ] Manual script M5 passes — needs a human browser pass; not run in this session
 
 **Learns.** Why stateless Workers cannot hold a WebSocket. `idFromName` as global coordination with no service discovery. The single-actor model. Hibernation and what it costs you.
 

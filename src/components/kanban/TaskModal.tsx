@@ -5,6 +5,7 @@ import type { Task, TaskPriority } from "@/hooks/useTasks"
 import type { Member } from "@/hooks/useMembers"
 import { useAuth } from "@/hooks/useAuth"
 import { useComments } from "@/hooks/useComments"
+import type { EntityMessage } from "@/hooks/useRealtime"
 import { downloadAttachment, useAttachments } from "@/hooks/useAttachments"
 import { relativeTime } from "@/lib/relative-time"
 import { createCommentSchema } from "@/lib/schemas"
@@ -155,18 +156,20 @@ function InlineEditableDescription({
 function TaskModal({
   task,
   members,
+  subscribe,
   onClose,
   onUpdate,
   onDelete,
 }: {
   task: Task
   members: Member[]
+  subscribe?: (handler: (message: EntityMessage) => void) => () => void
   onClose: () => void
   onUpdate: (patch: Partial<Pick<Task, "title" | "description" | "priority" | "assigneeId" | "dueAt">>) => void
   onDelete: () => void
 }) {
   const { user } = useAuth()
-  const { comments, isLoading: commentsLoading, postComment } = useComments(task.id)
+  const { comments, isLoading: commentsLoading, postComment } = useComments(task.id, { subscribe })
   const { attachments, uploadProgress, upload, deleteAttachment } = useAttachments(task.id)
   const [draftComment, setDraftComment] = React.useState("")
   const [isDraggingFile, setIsDraggingFile] = React.useState(false)

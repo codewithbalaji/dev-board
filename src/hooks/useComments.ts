@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { apiFetch } from "@/api/client";
+import type { EntityMessage } from "./useRealtime";
 
 export interface Comment {
   id: string;
@@ -17,9 +18,35 @@ export interface UseCommentsResult {
   postComment(body: string): Promise<void>;
 }
 
-export function useComments(taskId: string | null): UseCommentsResult {
+interface UseCommentsOptions {
+  subscribe?: (handler: (message: EntityMessage) => void) => () => void;
+}
+
+export function useComments(taskId: string | null, options: UseCommentsOptions = {}): UseCommentsResult {
   const [comments, setComments] = React.useState<Comment[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const { subscribe } = options;
+
+  // See useTasks.ts for why in-flight mutation ids are tracked this way.
+  const ownMutationIds = React.useRef(new Set<string>());
+
+  React.useEffect(() => {
+    if (!subscribe) return;
+    return subscribe((message: EntityMessage) => {
+      if (message.mutationId && ownMutationIds.current.delete(message.mutationId)) return;
+
+      if (message.type === "comment.upserted" && message.comment.taskId === taskId) {
+        setComments((prev) => {
+          const existing = prev.find((c) => c.id === message.comment.id);
+          if (existing && existing.updatedAt >= message.comment.updatedAt) return prev;
+          if (!existing) return [...prev, message.comment];
+          return prev.map((c) => (c.id === message.comment.id ? message.comment : c));
+        });
+      } else if (message.type === "comment.deleted" && message.taskId === taskId) {
+        setComments((prev) => prev.filter((c) => c.id !== message.commentId));
+      }
+    });
+  }, [subscribe, taskId]);
 
   React.useEffect(() => {
     if (!taskId) {
@@ -48,11 +75,13 @@ export function useComments(taskId: string | null): UseCommentsResult {
         updatedAt: Math.floor(Date.now() / 1000),
       };
       setComments((prev) => [...prev, optimistic]);
+      const mutationId = crypto.randomUUID();
+      ownMutationIds.current.add(mutationId);
       try {
         const data = await apiFetch<{ comment: Comment }>(`/api/tasks/${taskId}/comments`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ body }),
+          body: JSON.stringify({ body, mutationId }),
         });
         setComments((prev) => prev.map((c) => (c.id === pendingId ? data.comment : c)));
       } catch {

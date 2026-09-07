@@ -9,6 +9,7 @@ export interface JWTPayload {
   iat: number;
   exp: number;
   typ: "session" | "ws";
+  projectId?: string;
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {

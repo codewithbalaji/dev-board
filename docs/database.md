@@ -396,6 +396,8 @@ Namespace binding: **`KV`**. Every key belongs to exactly one of three prefixes.
 | `config:feature_flags` | JSON object | none | Operator | Manual |
 | `ratelimit:<scope>:<identifier>:<window>` | Request count (string integer) | 2 × window | Rate-limit middleware | Expiry only |
 
+**Phase 4 landed `cache:project:stats:*` and the three `config:*` keys.** `cache:user:projects:*` and `ratelimit:*` are in the registry (`worker/lib/cache-keys.ts`) for completeness but have no writer yet — `GET /api/projects` still reads D1 directly, and `ratelimit:*` waits on Phase 7's rate-limit middleware. Neither exists in the KV namespace until its owning route ships.
+
 Build every key through a helper in `worker/lib/cache-keys.ts` — never inline a template literal at a call site. One typo in a purge path silently leaves a stale cache forever, and that class of bug is invisible in testing.
 
 ```ts

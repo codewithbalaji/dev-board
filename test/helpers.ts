@@ -66,3 +66,14 @@ export async function apiRequest(path: string, init?: RequestInit): Promise<Resp
   await waitOnExecutionContext(ctx);
   return res;
 }
+
+export async function connect(
+  stub: DurableObjectStub,
+  attach: { userId: string; displayName?: string },
+): Promise<WebSocket> {
+  const url = `https://do/?userId=${attach.userId}&displayName=${attach.displayName ?? attach.userId}`;
+  const res = await stub.fetch(url, { headers: { Upgrade: "websocket" } });
+  if (!res.webSocket) throw new Error("Expected a WebSocket upgrade");
+  res.webSocket.accept();
+  return res.webSocket;
+}

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { env } from "cloudflare:workers";
-import { apiRequest, authHeader, seedMember, seedProject, seedUser } from "../helpers";
+import { apiRequest, authHeader, connect, seedMember, seedProject, seedUser } from "../helpers";
+
+function nextMessage(ws: WebSocket): Promise<unknown> {
+  return new Promise((resolve) => {
+    ws.addEventListener("message", (event) => resolve(JSON.parse(event.data as string)), { once: true });
+  });
+}
 
 function jsonBody(method: string, body?: unknown): RequestInit {
   return {
@@ -116,6 +122,28 @@ describe("PATCH /api/tasks/:id/status", () => {
       headers: { ...authHeader(owner), "content-type": "application/json" },
     });
     expect(res.status).toBe(404);
+  });
+
+  it("broadcasts the moved task to the project's DO", async () => {
+    const owner = await seedUser("t-owner12@example.com");
+    const { projectId, taskId } = await seedProject(owner.id);
+
+    const stub = env.REALTIME_BOARD.get(env.REALTIME_BOARD.idFromName(projectId));
+    const socket = await connect(stub, { userId: owner.id });
+    await nextMessage(socket); // presence from its own connect
+
+    const broadcast = nextMessage(socket);
+    const res = await apiRequest(`/api/tasks/${taskId}/status`, {
+      ...jsonBody("PATCH", { status: "done", position: 1500, mutationId: "m1" }),
+      headers: { ...authHeader(owner), "content-type": "application/json" },
+    });
+    expect(res.status).toBe(200);
+    await expect(broadcast).resolves.toMatchObject({
+      type: "task.upserted",
+      mutationId: "m1",
+      task: { id: taskId, status: "done" },
+    });
+    socket.close();
   });
 });
 

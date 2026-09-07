@@ -3,6 +3,7 @@ import type { Env, Variables } from "../env";
 import { authMiddleware } from "../middleware/auth";
 import { ApiError } from "../lib/errors";
 import { assertTaskMembership, ROLE_RANK, type Role } from "../lib/authz";
+import { cacheKeys } from "../lib/cache-keys";
 
 const MIME_EXT: Record<string, string> = {
   "image/png": ".png",
@@ -109,6 +110,7 @@ attachments.post("/tasks/:id/attachments", async (c) => {
   )
     .bind(id, taskId, key, filename, file.size, file.type, user.id)
     .run();
+  await c.env.KV.delete(cacheKeys.projectStats(task.project_id));
 
   const row = await c.env.DB.prepare("SELECT * FROM attachments WHERE id = ?")
     .bind(id)
@@ -148,14 +150,14 @@ attachments.delete("/attachments/:id", async (c) => {
   const id = c.req.param("id");
 
   const row = await c.env.DB.prepare(
-    `SELECT a.*, pm.role AS __role
+    `SELECT a.*, t.project_id AS __projectId, pm.role AS __role
      FROM attachments a
      JOIN tasks t ON t.id = a.task_id
      JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = ?
      WHERE a.id = ?`,
   )
     .bind(user.id, id)
-    .first<AttachmentRow & { __role: Role }>();
+    .first<AttachmentRow & { __projectId: string; __role: Role }>();
   if (!row) throw new ApiError(404, "NOT_FOUND", "Attachment not found");
 
   const canDelete = row.uploaded_by === user.id || ROLE_RANK[row.__role] >= ROLE_RANK.admin;
@@ -164,6 +166,7 @@ attachments.delete("/attachments/:id", async (c) => {
   // R2 first, D1 last — same ordering rule as the task-deletion cascade.
   await c.env.BUCKET.delete(row.file_key);
   await c.env.DB.prepare("DELETE FROM attachments WHERE id = ?").bind(id).run();
+  await c.env.KV.delete(cacheKeys.projectStats(row.__projectId));
 
   return c.body(null, 204);
 });

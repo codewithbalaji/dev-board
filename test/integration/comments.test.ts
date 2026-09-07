@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { env } from "cloudflare:workers";
-import { apiRequest, authHeader, seedMember, seedProject, seedUser } from "../helpers";
+import { apiRequest, authHeader, connect, seedMember, seedProject, seedUser } from "../helpers";
+
+function nextMessage(ws: WebSocket): Promise<unknown> {
+  return new Promise((resolve) => {
+    ws.addEventListener("message", (event) => resolve(JSON.parse(event.data as string)), { once: true });
+  });
+}
 
 function jsonBody(method: string, body?: unknown): RequestInit {
   return {
@@ -65,6 +71,28 @@ describe("POST /api/tasks/:id/comments", () => {
       headers: { ...authHeader(viewer), "content-type": "application/json" },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("broadcasts the new comment to the project's DO", async () => {
+    const owner = await seedUser("c-owner9@example.com");
+    const { projectId, taskId } = await seedProject(owner.id);
+
+    const stub = env.REALTIME_BOARD.get(env.REALTIME_BOARD.idFromName(projectId));
+    const socket = await connect(stub, { userId: owner.id });
+    await nextMessage(socket); // presence from its own connect
+
+    const broadcast = nextMessage(socket);
+    const res = await apiRequest(`/api/tasks/${taskId}/comments`, {
+      ...jsonBody("POST", { body: "Realtime, please", mutationId: "m2" }),
+      headers: { ...authHeader(owner), "content-type": "application/json" },
+    });
+    expect(res.status).toBe(200);
+    await expect(broadcast).resolves.toMatchObject({
+      type: "comment.upserted",
+      mutationId: "m2",
+      comment: { body: "Realtime, please" },
+    });
+    socket.close();
   });
 });
 

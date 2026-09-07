@@ -68,10 +68,10 @@ Day-to-day you run two terminals: `npm run worker:dev` and `npm run dev`.
 
 ### The Vite proxy — Phase 1
 
-`vite.config.ts` currently has no `server` block. Phase 1 adds one. Note `ws: true` on the `/ws` entry; without it the WebSocket upgrade is not proxied and Phase 5 will appear broken for reasons that have nothing to do with Durable Objects.
+`vite.config.ts` currently has no `server` block. Phase 1 adds one. The realtime route lives at `/api/ws` (see [architecture.md §6.4](./architecture.md#64-get-apiwsprojectid--upgrade-and-hand-off)), which already falls under the `/api` proxy entry — so that single entry needs `ws: true` too, or the WebSocket upgrade silently fails to proxy and Phase 5 appears broken for reasons that have nothing to do with Durable Objects. There is no separate `/ws` entry; nothing is served at a bare `/ws`.
 
 ```ts
-// vite.config.ts — Phase 1 addition
+// vite.config.ts — Phase 1 addition, ws:true added in Phase 5
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -79,8 +79,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': { target: 'http://localhost:8787', changeOrigin: true },
-      '/ws':  { target: 'ws://localhost:8787',   ws: true },
+      '/api': { target: 'http://localhost:8787', changeOrigin: true, ws: true },
     },
   },
 })

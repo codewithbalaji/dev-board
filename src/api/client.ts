@@ -3,6 +3,7 @@ import { getToken } from "@/stores/auth-store";
 export interface DevBoardHeaders {
   colo: string;
   durationMs: number | null;
+  cache: "HIT" | "MISS" | "BYPASS" | null;
 }
 
 export interface ApiFetchOptions extends RequestInit {
@@ -12,7 +13,7 @@ export interface ApiFetchOptions extends RequestInit {
 
 type Listener = (headers: DevBoardHeaders) => void;
 
-let lastHeaders: DevBoardHeaders = { colo: "LOCAL", durationMs: null };
+let lastHeaders: DevBoardHeaders = { colo: "LOCAL", durationMs: null, cache: null };
 const listeners = new Set<Listener>();
 
 function notify(headers: DevBoardHeaders): void {
@@ -40,6 +41,7 @@ export async function apiFetch<T>(path: string, init?: ApiFetchOptions): Promise
   notify({
     colo: res.headers.get("X-DevBoard-Colo") ?? "LOCAL",
     durationMs: res.headers.get("X-DevBoard-Duration") ? Number(res.headers.get("X-DevBoard-Duration")) : null,
+    cache: res.headers.get("X-DevBoard-Cache") as DevBoardHeaders["cache"],
   });
 
   if (!res.ok) {
