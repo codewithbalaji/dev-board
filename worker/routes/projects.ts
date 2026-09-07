@@ -148,6 +148,15 @@ projects.post("/", async (c) => {
   ]);
 
   const row = await c.env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(id).first<ProjectRow>();
+  await c.env.ACTIVITY_QUEUE.send({
+    type: "project.member_added",
+    projectId: id,
+    actorId: user.id,
+    entityType: "project",
+    entityId: id,
+    payload: { userId: user.id, displayName: user.name, role: "owner" },
+    occurredAt: Math.floor(Date.now() / 1000),
+  });
   return c.json({ project: toApiProject(row as ProjectRow, 1) });
 });
 

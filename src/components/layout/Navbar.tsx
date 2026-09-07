@@ -38,9 +38,20 @@ interface NavbarProps {
   onSelectProject?: (projectId: string) => void
   onCreateProject?: (name: string) => void
   onLogout?: () => void
+  activeTab?: "board" | "activity"
+  onTabChange?: (tab: "board" | "activity") => void
 }
 
-function Navbar({ user, projects = [], selectedProjectId = null, onSelectProject, onCreateProject, onLogout }: NavbarProps) {
+function Navbar({
+  user,
+  projects = [],
+  selectedProjectId = null,
+  onSelectProject,
+  onCreateProject,
+  onLogout,
+  activeTab = "board",
+  onTabChange,
+}: NavbarProps) {
   const [isDark, setIsDark] = React.useState(getIsDark)
   const [mobileSidebarOpen, setMobileSidebarOpen] = React.useState(false)
   const selectedProject = projects.find((p) => p.id === selectedProjectId)
@@ -104,13 +115,15 @@ function Navbar({ user, projects = [], selectedProjectId = null, onSelectProject
           </DropdownMenu>
         )}
 
-        {user && (
-          <Tabs value="board" className="hidden sm:block">
+        {user && selectedProjectId && (
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => onTabChange?.(value as "board" | "activity")}
+            className="hidden sm:block"
+          >
             <TabsList>
               <TabsTrigger value="board">Board</TabsTrigger>
-              <TabsTrigger value="activity" disabled>
-                Activity
-              </TabsTrigger>
+              <TabsTrigger value="activity">Activity</TabsTrigger>
             </TabsList>
           </Tabs>
         )}

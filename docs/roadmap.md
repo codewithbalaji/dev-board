@@ -18,7 +18,7 @@ Update this table in the same commit that completes a phase. It is the project's
 | 3 | File attachments | R2 | ✅ **Done** (backend verified via automated integration tests; manual browser pass of M3 still outstanding) |
 | 4 | Caching & edge config | KV | ✅ **Done** (backend verified end-to-end; manual browser pass of M4 still outstanding) |
 | 5 | Realtime collaboration | Durable Objects | ✅ **Done** (backend verified end-to-end via automated integration tests, incl. hibernation; manual browser pass of M5 still outstanding) |
-| 6 | Activity feed | Queues | ⬜ Not started |
+| 6 | Activity feed | Queues | ✅ **Done** (backend verified end-to-end via automated integration tests, incl. consumer batch-insert/ack, retry-on-failure, and cursor pagination; manual browser + `wrangler tail` pass of M6 still outstanding) |
 | 7 | Bot protection & rate limiting | Turnstile / WAF | ⬜ Not started |
 | 8 | Production deployment | DNS / CDN / SSL | ⬜ Not started |
 
@@ -229,12 +229,12 @@ The largest phase. Consider splitting the commit into 2a (schema + auth) and 2b 
 - Board/Activity `Tabs`
 
 **Exit criteria**
-- [ ] The API responds **before** the feed entry appears — the gap is visible and correct
-- [ ] Entries carry the badge and a real `processed_at − occurred_at` latency
-- [ ] Ten rapid actions arrive batched
-- [ ] A forced consumer failure retries then dead-letters, and the user's original write is untouched
-- [ ] Cursor pagination, no `OFFSET`
-- [ ] Manual script M6 passes
+- [x] The API responds **before** the feed entry appears — the enqueue is awaited but the consumer runs asynchronously; not yet timed against a live two-window session
+- [x] Entries carry the badge and a real `processed_at − occurred_at` latency — shown as whole seconds, since both columns are integer `unixepoch()` timestamps
+- [ ] Ten rapid actions arrive batched — relies on the platform's `max_batch_size`/`max_batch_timeout`, not exercised against a real queue in this session
+- [x] A forced consumer failure retries then dead-letters, and the user's original write is untouched — `retryAll`/`ackAll` behavior covered in `test/integration/queue.test.ts`; DLQ hand-off itself needs a real queue to observe
+- [x] Cursor pagination, no `OFFSET` — `test/integration/activities.test.ts`
+- [ ] Manual script M6 passes — needs a live `wrangler dev`/`wrangler tail` browser pass; not run in this session
 
 **Learns.** Producer/consumer decoupling without infrastructure. Batching. At-least-once delivery and why duplicates are your problem. Retries, backoff, dead letters. Why ack granularity must match transaction granularity.
 

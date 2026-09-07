@@ -3,6 +3,7 @@ import * as React from "react"
 import { apiFetch } from "@/api/client"
 import type { Task } from "./useTasks"
 import type { Comment } from "./useComments"
+import type { Activity } from "./useActivities"
 
 // Mirrors worker/lib/broadcast.ts's BroadcastMessage — duplicated deliberately,
 // same rationale as position.ts/schemas.ts: src/ and worker/ are separate
@@ -12,6 +13,7 @@ export type BroadcastMessage =
   | { type: "task.deleted"; taskId: string; projectId: string; mutationId?: string }
   | { type: "comment.upserted"; comment: Comment; mutationId?: string }
   | { type: "comment.deleted"; commentId: string; taskId: string; mutationId?: string }
+  | { type: "activity.created"; activity: Activity; mutationId?: undefined }
   | { type: "presence"; members: PresenceMember[] }
 
 export interface PresenceMember {

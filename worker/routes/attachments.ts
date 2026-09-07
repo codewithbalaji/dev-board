@@ -115,7 +115,17 @@ attachments.post("/tasks/:id/attachments", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM attachments WHERE id = ?")
     .bind(id)
     .first<AttachmentRow>();
-  return c.json({ attachment: toApiAttachment(row as AttachmentRow) }, 201);
+  const apiAttachment = toApiAttachment(row as AttachmentRow);
+  await c.env.ACTIVITY_QUEUE.send({
+    type: "attachment.uploaded",
+    projectId: task.project_id,
+    actorId: user.id,
+    entityType: "attachment",
+    entityId: id,
+    payload: { taskId, filename: apiAttachment.filename, size: apiAttachment.size },
+    occurredAt: Math.floor(Date.now() / 1000),
+  });
+  return c.json({ attachment: apiAttachment }, 201);
 });
 
 attachments.get("/attachments/:id/download", async (c) => {
@@ -167,6 +177,15 @@ attachments.delete("/attachments/:id", async (c) => {
   await c.env.BUCKET.delete(row.file_key);
   await c.env.DB.prepare("DELETE FROM attachments WHERE id = ?").bind(id).run();
   await c.env.KV.delete(cacheKeys.projectStats(row.__projectId));
+  await c.env.ACTIVITY_QUEUE.send({
+    type: "attachment.deleted",
+    projectId: row.__projectId,
+    actorId: user.id,
+    entityType: "attachment",
+    entityId: id,
+    payload: { taskId: row.task_id, filename: row.filename },
+    occurredAt: Math.floor(Date.now() / 1000),
+  });
 
   return c.body(null, 204);
 });

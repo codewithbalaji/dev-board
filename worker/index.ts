@@ -6,8 +6,11 @@ import auth from "./routes/auth";
 import projects from "./routes/projects";
 import tasks from "./routes/tasks";
 import attachments from "./routes/attachments";
+import activities from "./routes/activities";
 import config from "./routes/config";
 import ws from "./routes/ws";
+import { handleActivityBatch } from "./queue/consumer";
+import type { ActivityMessage } from "./lib/activity";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -69,8 +72,12 @@ app.route("/api/ws", ws);
 
 app.route("/api/auth", auth);
 app.route("/api/projects", projects);
+app.route("/api/projects", activities);
 app.route("/api", tasks);
 app.route("/api", attachments);
 
-export default { fetch: app.fetch };
+export default {
+  fetch: app.fetch,
+  queue: handleActivityBatch,
+} satisfies ExportedHandler<Env, ActivityMessage>;
 export { RealtimeBoard } from "./durable-objects/RealtimeBoard";

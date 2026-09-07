@@ -100,6 +100,15 @@ tasks.post("/projects/:projectId/tasks", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(id).first<TaskRow>();
   const apiTask = toApiTask(row as TaskRow);
   await broadcastToProject(c.env, projectId, { type: "task.upserted", task: apiTask, mutationId });
+  await c.env.ACTIVITY_QUEUE.send({
+    type: "task.created",
+    projectId,
+    actorId: user.id,
+    entityType: "task",
+    entityId: id,
+    payload: { title: apiTask.title, status: apiTask.status },
+    occurredAt: Math.floor(Date.now() / 1000),
+  });
   return c.json({ task: apiTask });
 });
 
@@ -120,26 +129,32 @@ tasks.patch("/tasks/:id", async (c) => {
   const body = parseOrThrow(updateTaskSchema, await c.req.json());
   const updates: string[] = [];
   const values: unknown[] = [];
+  const changed: string[] = [];
 
   if (body.title !== undefined) {
     updates.push("title = ?");
     values.push(body.title);
+    changed.push("title");
   }
   if (body.description !== undefined) {
     updates.push("description = ?");
     values.push(body.description);
+    changed.push("description");
   }
   if (body.priority !== undefined) {
     updates.push("priority = ?");
     values.push(body.priority);
+    changed.push("priority");
   }
   if (body.assigneeId !== undefined) {
     updates.push("assignee_id = ?");
     values.push(body.assigneeId);
+    changed.push("assigneeId");
   }
   if (body.dueAt !== undefined) {
     updates.push("due_at = ?");
     values.push(body.dueAt);
+    changed.push("dueAt");
   }
 
   if (updates.length > 0) {
@@ -157,6 +172,15 @@ tasks.patch("/tasks/:id", async (c) => {
       type: "task.upserted",
       task: apiTask,
       mutationId: body.mutationId,
+    });
+    await c.env.ACTIVITY_QUEUE.send({
+      type: "task.updated",
+      projectId: task.project_id,
+      actorId: user.id,
+      entityType: "task",
+      entityId: taskId,
+      payload: { title: apiTask.title, changed },
+      occurredAt: Math.floor(Date.now() / 1000),
     });
   }
   return c.json({ task: apiTask });
@@ -180,6 +204,15 @@ tasks.patch("/tasks/:id/status", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<TaskRow>();
   const apiTask = toApiTask(row as TaskRow);
   await broadcastToProject(c.env, task.project_id, { type: "task.upserted", task: apiTask, mutationId });
+  await c.env.ACTIVITY_QUEUE.send({
+    type: "task.status_changed",
+    projectId: task.project_id,
+    actorId: user.id,
+    entityType: "task",
+    entityId: taskId,
+    payload: { title: apiTask.title, from: task.status, to: status },
+    occurredAt: Math.floor(Date.now() / 1000),
+  });
   return c.json({ task: apiTask });
 });
 
@@ -206,6 +239,15 @@ tasks.delete("/tasks/:id", async (c) => {
     taskId,
     projectId: task.project_id,
     mutationId: c.req.query("mutationId"),
+  });
+  await c.env.ACTIVITY_QUEUE.send({
+    type: "task.deleted",
+    projectId: task.project_id,
+    actorId: user.id,
+    entityType: "task",
+    entityId: taskId,
+    payload: { title: task.title },
+    occurredAt: Math.floor(Date.now() / 1000),
   });
   return c.json({ deleted: true });
 });
@@ -240,6 +282,15 @@ tasks.post("/tasks/:id/comments", async (c) => {
     type: "comment.upserted",
     comment: apiComment,
     mutationId,
+  });
+  await c.env.ACTIVITY_QUEUE.send({
+    type: "comment.created",
+    projectId: task.project_id,
+    actorId: user.id,
+    entityType: "comment",
+    entityId: id,
+    payload: { taskId, taskTitle: task.title, excerpt: apiComment.body.slice(0, 140) },
+    occurredAt: Math.floor(Date.now() / 1000),
   });
   return c.json({ comment: apiComment });
 });

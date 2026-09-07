@@ -1,14 +1,17 @@
 import type { Env } from "../env";
 import type { toApiComment, toApiTask } from "../routes/tasks";
+import type { toApiActivity } from "../routes/activities";
 
 type ApiTask = ReturnType<typeof toApiTask>;
 type ApiComment = ReturnType<typeof toApiComment>;
+type ApiActivity = ReturnType<typeof toApiActivity>;
 
 export type BroadcastMessage =
   | { type: "task.upserted"; task: ApiTask; mutationId?: string }
   | { type: "task.deleted"; taskId: string; projectId: string; mutationId?: string }
   | { type: "comment.upserted"; comment: ApiComment; mutationId?: string }
   | { type: "comment.deleted"; commentId: string; taskId: string; mutationId?: string }
+  | { type: "activity.created"; activity: ApiActivity; mutationId?: undefined }
   | { type: "presence"; members: { userId: string; displayName: string }[] };
 
 // Realtime is an enhancement, never a precondition — a DO outage must never

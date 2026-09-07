@@ -1,4 +1,5 @@
 import type { RealtimeBoard } from "./durable-objects/RealtimeBoard";
+import type { ActivityMessage } from "./lib/activity";
 
 export interface Env {
   ENVIRONMENT: "development" | "staging" | "production";
@@ -6,6 +7,7 @@ export interface Env {
   BUCKET: R2Bucket;
   KV: KVNamespace;
   REALTIME_BOARD: DurableObjectNamespace<RealtimeBoard>;
+  ACTIVITY_QUEUE: Queue<ActivityMessage>;
   JWT_SECRET: string;
 }
 

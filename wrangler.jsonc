@@ -41,6 +41,23 @@
       "new_sqlite_classes": ["RealtimeBoard"]
     }
   ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "ACTIVITY_QUEUE",
+        "queue": "devboard-activity"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "devboard-activity",
+        "max_batch_size": 25,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "devboard-activity-dlq"
+      }
+    ]
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

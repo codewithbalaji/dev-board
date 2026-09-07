@@ -1,8 +1,10 @@
+import { vi } from "vitest";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { signJWT } from "../worker/lib/jwt";
 import type { Role } from "../worker/lib/authz";
 import { hashPassword } from "../worker/lib/password";
+import type { ActivityMessage } from "../worker/lib/activity";
 
 export interface TestUser {
   id: string;
@@ -65,6 +67,33 @@ export async function apiRequest(path: string, init?: RequestInit): Promise<Resp
   const res = await exports.default.fetch(new Request(`https://test.local${path}`, init), env, ctx);
   await waitOnExecutionContext(ctx);
   return res;
+}
+
+export function makeBatch(bodies: Partial<ActivityMessage>[]): MessageBatch<ActivityMessage> {
+  const messages = bodies.map((body, i) => ({
+    id: `msg-${i}`,
+    timestamp: new Date(),
+    attempts: 1,
+    body: {
+      type: "task.created",
+      projectId: "test-project",
+      actorId: null,
+      entityType: "task",
+      entityId: null,
+      payload: {},
+      occurredAt: Math.floor(Date.now() / 1000),
+      ...body,
+    } as ActivityMessage,
+    ack: vi.fn(),
+    retry: vi.fn(),
+  }));
+
+  return {
+    queue: "devboard-activity",
+    messages,
+    ackAll: vi.fn(),
+    retryAll: vi.fn(),
+  } as unknown as MessageBatch<ActivityMessage>;
 }
 
 export async function connect(

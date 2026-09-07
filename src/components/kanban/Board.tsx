@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { TaskCard, TaskCardView } from "@/components/kanban/TaskCard"
 import { TaskModal } from "@/components/kanban/TaskModal"
+import { ActivityFeed } from "@/components/activity/ActivityFeed"
 
 const COLUMNS: { status: TaskStatus; label: string; icon: string }[] = [
   { status: "todo", label: "To do", icon: "○" },
@@ -214,7 +215,8 @@ function Board({
   const inProgressCount = byStatus.in_progress.length
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
       {realtime.connectionState === "offline" && !dismissedOffline && (
         <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-1.5 text-xs text-muted-foreground">
           <span>Live updates paused. Reload to reconnect.</span>
@@ -298,6 +300,14 @@ function Board({
           }}
         />
       )}
+      </div>
+      <ActivityFeed
+        projectId={project.id}
+        members={members}
+        subscribe={realtime.subscribe}
+        variant="rail"
+        className="hidden lg:flex"
+      />
     </div>
   )
 }

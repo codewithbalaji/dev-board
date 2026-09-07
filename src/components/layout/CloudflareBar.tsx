@@ -2,7 +2,7 @@ import * as React from "react"
 import { cn } from "cn"
 
 import { apiFetch, getLastHeaders, subscribeHeaders, type DevBoardHeaders } from "@/api/client"
-import type { ConnectionState, PresenceMember } from "@/hooks/useRealtime"
+import type { ConnectionState, EntityMessage, PresenceMember } from "@/hooks/useRealtime"
 
 interface InfoResponse {
   colo: string
@@ -27,13 +27,24 @@ interface CloudflareBarProps extends React.ComponentProps<"div"> {
   projectId?: string | null
   connectionState?: ConnectionState
   presence?: PresenceMember[]
+  subscribe?: (handler: (message: EntityMessage) => void) => () => void
 }
 
-function CloudflareBar({ className, projectId, connectionState, presence, ...props }: CloudflareBarProps) {
+function CloudflareBar({ className, projectId, connectionState, presence, subscribe, ...props }: CloudflareBarProps) {
   const [headers, setHeaders] = React.useState<DevBoardHeaders>(getLastHeaders)
   const [isPurging, setIsPurging] = React.useState(false)
+  const [queueLagSeconds, setQueueLagSeconds] = React.useState<number | null>(null)
 
   React.useEffect(() => subscribeHeaders(setHeaders), [])
+
+  React.useEffect(() => {
+    if (!subscribe) return
+    return subscribe((message) => {
+      if (message.type === "activity.created") {
+        setQueueLagSeconds(Math.max(0, message.activity.processedAt - message.activity.occurredAt))
+      }
+    })
+  }, [subscribe])
 
   React.useEffect(() => {
     apiFetch<InfoResponse>("/api/info").catch(() => {
@@ -79,6 +90,14 @@ function CloudflareBar({ className, projectId, connectionState, presence, ...pro
           title="KV cache status for the last request"
         >
           {headers.cache}
+        </span>
+      )}
+      {queueLagSeconds !== null && (
+        <span
+          className="shrink-0 rounded border border-border px-1.5 py-0.5 text-muted-foreground tabular-nums"
+          title="The last activity took this long to process asynchronously"
+        >
+          Q +{queueLagSeconds}s
         </span>
       )}
       {connectionState && (
