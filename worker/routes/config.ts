@@ -21,6 +21,7 @@ config.get("/", async (c) => {
     announcements: announcements ?? [],
     maintenanceMode: maintenanceMode === "on" ? "on" : "off",
     featureFlags: featureFlags ?? {},
+    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
   });
 });
 

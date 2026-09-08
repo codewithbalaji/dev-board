@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { Env, Variables } from "../env";
 import { authMiddleware } from "../middleware/auth";
+import { turnstile } from "../middleware/turnstile";
+import { registerIpLimit, loginIpLimit, loginEmailLimit } from "../middleware/rate-limit";
 import { ApiError } from "../lib/errors";
 import { signJWT } from "../lib/jwt";
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from "../lib/password";
@@ -31,7 +33,7 @@ function toApiUser(row: UserRow) {
 
 const auth = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-auth.post("/register", async (c) => {
+auth.post("/register", registerIpLimit, turnstile, async (c) => {
   const { name, email, password } = parseOrThrow(registerSchema, await c.req.json());
 
   const existing = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
@@ -50,7 +52,7 @@ auth.post("/register", async (c) => {
   return c.json({ user: { id, email, name, avatarColor: "neutral" }, token });
 });
 
-auth.post("/login", async (c) => {
+auth.post("/login", loginIpLimit, loginEmailLimit, turnstile, async (c) => {
   const { email, password } = parseOrThrow(loginSchema, await c.req.json());
 
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first<UserRow>();

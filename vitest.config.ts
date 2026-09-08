@@ -13,6 +13,7 @@ export default defineConfig({
           bindings: {
             TEST_MIGRATIONS: migrations,
             JWT_SECRET: "test-secret-not-a-real-one",
+            TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
           },
         },
       };

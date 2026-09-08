@@ -19,7 +19,7 @@ Update this table in the same commit that completes a phase. It is the project's
 | 4 | Caching & edge config | KV | ✅ **Done** (backend verified end-to-end; manual browser pass of M4 still outstanding) |
 | 5 | Realtime collaboration | Durable Objects | ✅ **Done** (backend verified end-to-end via automated integration tests, incl. hibernation; manual browser pass of M5 still outstanding) |
 | 6 | Activity feed | Queues | ✅ **Done** (backend verified end-to-end via automated integration tests, incl. consumer batch-insert/ack, retry-on-failure, and cursor pagination; manual browser + `wrangler tail` pass of M6 still outstanding) |
-| 7 | Bot protection & rate limiting | Turnstile / WAF | ⬜ Not started |
+| 7 | Bot protection & rate limiting | Turnstile / WAF | ✅ **Done** (backend + tests verified end-to-end: Turnstile siteverify, KV fixed-window limiter on register/login, security headers; manual browser pass of M7 — CSP-live-verification, dashboard WAF rule, production Turnstile keys — still outstanding) |
 | 8 | Production deployment | DNS / CDN / SSL | ⬜ Not started |
 
 **Phase 0, already in the repo:** Vite 8 + React 19 + TypeScript 6, Tailwind v4 via `@tailwindcss/vite` with the full oklch token set in `src/index.css`, shadcn configured (`radix-luma`, `neutral`), one `Button` component, oxlint, `@/` path alias. No `worker/`, no `wrangler.jsonc`, no tests.
@@ -248,21 +248,25 @@ The largest phase. Consider splitting the commit into 2a (schema + auth) and 2b 
 
 **Deliverables**
 - `worker/middleware/turnstile.ts` — server-side `siteverify`
-- `worker/middleware/rate-limit.ts` — KV fixed-window limiter
-- `worker/middleware/security-headers.ts` — CSP, HSTS, nosniff, referrer, frame, permissions
-- Turnstile widget in both auth forms, with test keys for dev
-- 429 UI with a live `Retry-After` countdown
-- Dashboard WAF rate-limiting rule on `/api/auth/*`
-- Tests: forged token, missing token, limiter trip, enumeration parity
+- `worker/middleware/rate-limit.ts` — KV fixed-window limiter (`identifier` option added beyond the literal spec, so login can key on IP **and** email as two composed middleware instances)
+- `worker/middleware/security-headers.ts` — CSP (environment-conditional `connect-src` for local dev vs. production `wss://`), HSTS, nosniff, referrer, frame, permissions
+- Turnstile widget (`src/components/auth/turnstile-widget.tsx`, a script-tag singleton — no new npm dependency) in both auth forms, with test keys for dev; sitekey served from `GET /api/config`'s new `turnstileSiteKey` field
+- 429 UI with a live `Retry-After` countdown (`src/components/auth/rate-limit-banner.tsx`)
+- Dashboard WAF rate-limiting rule on `/api/auth/*` — not code; a deploy-time zone configuration step, tracked in [deployment.md](./deployment.md)'s pre-launch checklist
+- Tests: forged token, missing token, limiter trip, enumeration parity — `test/integration/auth.test.ts`
+
+**Deliberately out of scope this phase.** Rate limiting is wired up only for `/api/auth/register` and `/api/auth/login` — the two routes the exit criteria test. The broader per-user mutation-limiter rows in [security.md §8](./security.md#8-rate-limiting) (attachments, other mutations) are documented design, not yet built; see the post-v1 backlog.
 
 **Exit criteria**
-- [ ] Registration without a valid token → 403
-- [ ] A replayed token → 403
-- [ ] Six failed logins in a minute → 429 with `Retry-After`; UI counts down
-- [ ] Security headers on every response
-- [ ] **CSP verified live**: Turnstile renders, WebSocket connects, no console violations
-- [ ] Login failure is identical for unknown email and wrong password, in copy and timing
-- [ ] Manual script M7 passes
+- [x] Registration without a valid token → 403 (`TURNSTILE_MISSING`, actually 400 — see note) / with a rejected token → 403 — `test/integration/auth.test.ts`
+- [x] A replayed token → 403 — enforced by Cloudflare's `siteverify` itself (tokens are single-use server-side); not a check DevBoard implements
+- [x] Six failed logins in a minute → 429 with `Retry-After`; UI counts down — `test/integration/auth.test.ts` + `RateLimitBanner`
+- [x] Security headers on every response — `worker/middleware/security-headers.ts`, verified via `curl -sI`
+- [ ] **CSP verified live**: Turnstile renders, WebSocket connects, no console violations — needs a real browser; not run in this session
+- [x] Login failure is identical for unknown email and wrong password, in copy and timing — pre-existing `DUMMY_PASSWORD_HASH` behavior, confirmed still passing with Turnstile/rate-limit middleware in front of it
+- [ ] Manual script M7 passes — steps requiring a live browser (token-strip, replay, console-open CSP/WS check) not run in this session; `curl`-based steps (missing-token 400, rate-limit 429 + `Retry-After`, security headers) verified
+
+Note: a missing Turnstile token returns `400 TURNSTILE_MISSING` (per the middleware spec in [security.md §7](./security.md#7-turnstile)), not 403 — the roadmap's original "→ 403" wording covered the *rejected*-token case; a *missing* token is a client bug, not a bot signal, hence the different status.
 
 **Learns.** Why a client-side challenge result is worthless without server verification. Layered defence: edge WAF vs. application limiter. The real limits of a KV counter. CSP as a practical exercise rather than a header you copy.
 

@@ -5,25 +5,30 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { FieldError } from "@/components/auth/field-error"
+import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/auth/turnstile-widget"
+import { RateLimitBanner } from "@/components/auth/rate-limit-banner"
 import { collectFieldErrors, loginSchema } from "@/lib/schemas"
 
 type FieldErrors = ReturnType<typeof collectFieldErrors<typeof loginSchema.shape>>
 
 function LoginForm({ onSwitchToRegister }: { onSwitchToRegister: () => void }) {
-  const { login, error } = useAuth()
+  const { login, error, retryAfter } = useAuth()
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({})
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null)
+  const turnstileRef = React.useRef<TurnstileWidgetHandle>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const errors = collectFieldErrors(loginSchema, { email, password })
     setFieldErrors(errors)
-    if (Object.keys(errors).length > 0) return
+    if (Object.keys(errors).length > 0 || !turnstileToken) return
 
     setIsSubmitting(true)
-    await login(email, password)
+    await login(email, password, turnstileToken)
+    turnstileRef.current?.reset()
     setIsSubmitting(false)
   }
 
@@ -63,13 +68,19 @@ function LoginForm({ onSwitchToRegister }: { onSwitchToRegister: () => void }) {
           <FieldError message={fieldErrors.password} />
         </div>
 
-        {error && (
-          <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive" role="alert">
-            {error}
-          </div>
+        <TurnstileWidget ref={turnstileRef} onToken={setTurnstileToken} />
+
+        {retryAfter ? (
+          <RateLimitBanner retryAfterSeconds={retryAfter} />
+        ) : (
+          error && (
+            <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+              {error}
+            </div>
+          )
         )}
 
-        <Button type="submit" disabled={isSubmitting} className="w-full">
+        <Button type="submit" disabled={isSubmitting || !turnstileToken} className="w-full">
           {isSubmitting ? "Signing in…" : "Sign in"}
         </Button>
       </form>

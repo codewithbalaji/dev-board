@@ -1,0 +1,8 @@
+JWT_SECRET=replace-with-a-long-random-string
+
+# Cloudflare's always-pass Turnstile test secret. Safe to commit/share — it
+# only works with the matching test sitekey in wrangler.jsonc's vars, never
+# a real one. For production, provision real Turnstile keys and set the
+# secret with `wrangler secret put TURNSTILE_SECRET_KEY` — see
+# docs/security.md#7-turnstile.
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA

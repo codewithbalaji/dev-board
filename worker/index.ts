@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env, Variables } from "./env";
 import { ApiError } from "./lib/errors";
+import { securityHeaders } from "./middleware/security-headers";
 import auth from "./routes/auth";
 import projects from "./routes/projects";
 import tasks from "./routes/tasks";
@@ -26,6 +27,8 @@ app.use(
     exposeHeaders: ["X-DevBoard-Colo", "X-DevBoard-Duration", "X-DevBoard-Cache"],
   }),
 );
+
+app.use("*", securityHeaders);
 
 app.use("*", async (c, next) => {
   c.set("requestStart", Date.now());

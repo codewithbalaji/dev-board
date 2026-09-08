@@ -93,7 +93,12 @@ describe("GET /api/config", () => {
     const res = await apiRequest("/api/config");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ announcements: [], maintenanceMode: "off", featureFlags: {} });
+    expect(body).toEqual({
+      announcements: [],
+      maintenanceMode: "off",
+      featureFlags: {},
+      turnstileSiteKey: "1x00000000000000000000AA",
+    });
   });
 
   it("returns seeded values", async () => {

@@ -333,12 +333,16 @@ The dashboard rule is the blunt outer wall; the KV limiter is the precise inner 
 
 ```ts
 // worker/middleware/rate-limit.ts — Phase 7
-export function rateLimit(opts: { scope: string; limit: number; windowSeconds: number }) {
-  return createMiddleware<{ Bindings: Env }>(async (c, next) => {
+export function rateLimit(opts: {
+  scope: string; limit: number; windowSeconds: number;
+  identifier?: (c: Context<{ Bindings: Env }>) => Promise<string> | string;
+}): MiddlewareHandler<{ Bindings: Env }> {
+  return async (c, next) => {
     const ip = c.req.header("CF-Connecting-IP") ?? "unknown";
+    const id = opts.identifier ? await opts.identifier(c) : ip;
     const now = Math.floor(Date.now() / 1000);
     const window = Math.floor(now / opts.windowSeconds);
-    const key = cacheKeys.rateLimit(opts.scope, ip, window);
+    const key = cacheKeys.rateLimit(opts.scope, id, window);
 
     const count = Number((await c.env.KV.get(key)) ?? 0);
 
@@ -356,9 +360,11 @@ export function rateLimit(opts: { scope: string; limit: number; windowSeconds: n
     );
     c.header("X-RateLimit-Remaining", String(opts.limit - count - 1));
     await next();
-  });
+  };
 }
 ```
+
+**Deviation from a bare `{ scope, limit, windowSeconds }` shape:** the factory takes an optional `identifier` resolver. Login needs two independent buckets — IP and email — so an attacker can't dodge one axis by rotating the other; it's composed as two separate middleware instances (`loginIpLimit`, `loginEmailLimit`) rather than one call trying to key on both at once.
 
 ### Limits
 
@@ -366,9 +372,11 @@ export function rateLimit(opts: { scope: string; limit: number; windowSeconds: n
 | :--- | ---: | ---: | :--- |
 | `POST /api/auth/login` | 5 | 60 s | IP **and** separately, email |
 | `POST /api/auth/register` | 3 | 300 s | IP |
-| `POST /api/tasks/:id/attachments` | 20 | 60 s | user id |
-| All other mutations | 100 | 60 s | user id |
+| `POST /api/tasks/:id/attachments` | 20 | 60 s | user id — **not wired up yet, see roadmap.md** |
+| All other mutations | 100 | 60 s | user id — **not wired up yet, see roadmap.md** |
 | Reads | — | — | Dashboard WAF only |
+
+Phase 7 wires up only the two auth-route rows — that's what its exit criteria test. The attachment/mutation rows are documented design, not yet built; picking them up is a post-v1 backlog item.
 
 ### Be honest about its limits
 
@@ -386,20 +394,29 @@ Applied by middleware to every response.
 
 ```ts
 // worker/middleware/security-headers.ts — Phase 7
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self' https://challenges.cloudflare.com",
-  "frame-src https://challenges.cloudflare.com",
-  "style-src 'self' 'unsafe-inline'",              // Tailwind injects styles
-  "img-src 'self' data: blob:",                    // attachment previews
-  "font-src 'self' data:",                         // Inter is bundled, not from a CDN
-  "connect-src 'self' wss://*.devboard.app",       // the WebSocket
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join("; ");
+function buildCsp(environment: Env["ENVIRONMENT"]): string {
+  const connectSrc =
+    environment === "production"
+      ? "connect-src 'self' wss://*.devboard.app"
+      : "connect-src 'self' ws://localhost:* wss://localhost:*";
+
+  return [
+    "default-src 'self'",
+    "script-src 'self' https://challenges.cloudflare.com",
+    "frame-src https://challenges.cloudflare.com",
+    "style-src 'self' 'unsafe-inline'",              // Tailwind injects styles
+    "img-src 'self' data: blob:",                    // attachment previews
+    "font-src 'self' data:",                         // Inter is bundled, not from a CDN
+    connectSrc,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
 ```
+
+**Deviation from a single static `CSP` constant:** `connect-src` is environment-conditional. Production terminates the WebSocket on `wss://*.devboard.app`, but local dev proxies it through the Vite dev server's own `localhost` origin (`vite.config.ts`'s `server.proxy`, `ws: true`) — the production hostname would never match there, and the WebSocket would fail to connect with no CSP-labeled error. Non-production environments get a broader `localhost`-scoped `connect-src` instead.
 
 | Header | Value | Stops |
 | :--- | :--- | :--- |

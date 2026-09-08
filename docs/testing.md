@@ -414,6 +414,10 @@ it("does not reveal whether an email exists", async () => {
 
 The last test guards a property that is trivially broken by a well-meaning "user not found" message.
 
+**Deviation from the snippet above:** the real test suite mocks the `siteverify` `fetch` call to resolve `{ success: true }` **by default** (via a `beforeEach`), overriding it per-test only for the "siteverify rejects" case, rather than letting most tests hit Cloudflare's real endpoint with the always-pass test secret. This keeps the suite deterministic and independent of CI network egress, and avoids a real network round-trip introducing its own timing variance ahead of the password check the enumeration-parity test guards. One implementation detail worth flagging: the mocked `Response` must be constructed *inside* the mock's implementation function (e.g. `mockImplementation(async () => new Response(...))`), not built once and returned via `mockResolvedValue` — a `Response` built outside the current request's handler trips the Workers runtime's "different request" I/O isolation error the first time its body is read from within an actual request.
+
+Also worth noting: KV storage in these tests is isolated per test **file**, not per test (`isolatedStorage`, §3) — so rate-limit counters persist across `it` blocks in the same file. Tests give each unrelated call its own simulated `CF-Connecting-IP` (a monotonically incrementing test IP) so one test's register/login calls don't exhaust another's IP-scoped quota; the dedicated rate-limit-tripping test deliberately reuses one IP across its own calls.
+
 ---
 
 ## 9. Frontend tests

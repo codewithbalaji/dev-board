@@ -5,27 +5,32 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { FieldError } from "@/components/auth/field-error"
+import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/auth/turnstile-widget"
+import { RateLimitBanner } from "@/components/auth/rate-limit-banner"
 import { cn } from "@/lib/utils"
 import { collectFieldErrors, registerSchema } from "@/lib/schemas"
 
 type FieldErrors = ReturnType<typeof collectFieldErrors<typeof registerSchema.shape>>
 
 function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void }) {
-  const { register, error } = useAuth()
+  const { register, error, retryAfter } = useAuth()
   const [name, setName] = React.useState("")
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({})
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const [turnstileToken, setTurnstileToken] = React.useState<string | null>(null)
+  const turnstileRef = React.useRef<TurnstileWidgetHandle>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const errors = collectFieldErrors(registerSchema, { name, email, password })
     setFieldErrors(errors)
-    if (Object.keys(errors).length > 0) return
+    if (Object.keys(errors).length > 0 || !turnstileToken) return
 
     setIsSubmitting(true)
-    await register(name, email, password)
+    await register(name, email, password, turnstileToken)
+    turnstileRef.current?.reset()
     setIsSubmitting(false)
   }
 
@@ -81,13 +86,19 @@ function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void }) {
           )}
         </div>
 
-        {error && (
-          <div className={cn("rounded-lg bg-destructive/10 p-3 text-sm text-destructive")} role="alert">
-            {error}
-          </div>
+        <TurnstileWidget ref={turnstileRef} onToken={setTurnstileToken} />
+
+        {retryAfter ? (
+          <RateLimitBanner retryAfterSeconds={retryAfter} />
+        ) : (
+          error && (
+            <div className={cn("rounded-lg bg-destructive/10 p-3 text-sm text-destructive")} role="alert">
+              {error}
+            </div>
+          )
         )}
 
-        <Button type="submit" disabled={isSubmitting} className="w-full">
+        <Button type="submit" disabled={isSubmitting || !turnstileToken} className="w-full">
           {isSubmitting ? "Creating account…" : "Create account"}
         </Button>
       </form>

@@ -49,9 +49,12 @@ export async function apiFetch<T>(path: string, init?: ApiFetchOptions): Promise
     const error = new Error(body?.error?.message ?? `Request failed: ${res.status}`) as Error & {
       code?: string;
       details?: unknown;
+      retryAfter?: number;
     };
     error.code = body?.error?.code ?? "UNKNOWN";
     error.details = body?.error?.details;
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfter = retryAfter;
     throw error;
   }
 

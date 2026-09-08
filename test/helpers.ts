@@ -62,6 +62,14 @@ export function authHeader(user: TestUser): Record<string, string> {
   return { Authorization: `Bearer ${user.token}` };
 }
 
+// Value is arbitrary — tests mock the siteverify fetch call rather than
+// hitting Cloudflare's real endpoint, so nothing ever inspects this string.
+export const TEST_TURNSTILE_TOKEN = "test-turnstile-token";
+
+export function withTurnstile(body: Record<string, unknown>): Record<string, unknown> {
+  return { ...body, turnstileToken: TEST_TURNSTILE_TOKEN };
+}
+
 export async function apiRequest(path: string, init?: RequestInit): Promise<Response> {
   const ctx = createExecutionContext();
   const res = await exports.default.fetch(new Request(`https://test.local${path}`, init), env, ctx);
